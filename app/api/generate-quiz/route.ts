@@ -1,4 +1,5 @@
 import { generateText, Output } from 'ai'
+import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 
 // Curriculum oficial inyectado en el contexto de Gemini
@@ -181,15 +182,16 @@ INSTRUCCIÓN ESPECIAL PARA UNIDAD III (Matrices y Sistemas):
 `
   }
 
-  const { output } = await generateText({
-    model: 'google/gemini-2.0-flash',
-    output: Output.object({
-      schema: questionSchema,
-    }),
-    messages: [
-      {
-        role: 'user',
-        content: `Eres un profesor universitario experto en matemáticas de primer año. Tu tarea es generar exactamente ${questionCount} preguntas de opción múltiple para un cuestionario universitario.
+  try {
+    const { output } = await generateText({
+      model: google('gemini-1.5-flash'),
+      output: Output.object({
+        schema: questionSchema,
+      }),
+      messages: [
+        {
+          role: 'user',
+          content: `Eres un profesor universitario experto en matemáticas de primer año. Tu tarea es generar exactamente ${questionCount} preguntas de opción múltiple para un cuestionario universitario.
 
 ${curriculum}
 
@@ -214,11 +216,16 @@ REGLAS ESTRICTAS:
 10. Genera IDs únicos descriptivos para cada pregunta (ej: "q-logica-prop-1", "q-matrices-gauss-2").
 
 Genera las ${questionCount} preguntas ahora en formato JSON.`
-      }
-    ],
-    maxOutputTokens: 8000,
-    temperature: 0.8,
-  })
+        }
+      ],
+      maxOutputTokens: 8000,
+      temperature: 0.8,
+    })
 
-  return Response.json({ questions: output?.questions || [] })
+    console.log('[v0] Generated questions:', output?.questions?.length || 0)
+    return Response.json({ questions: output?.questions || [] })
+  } catch (error) {
+    console.error('[v0] Error generating quiz:', error)
+    return Response.json({ questions: [], error: String(error) }, { status: 500 })
+  }
 }

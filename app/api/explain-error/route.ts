@@ -1,4 +1,5 @@
 import { generateText } from 'ai'
+import { google } from '@ai-sdk/google'
 
 export async function POST(req: Request) {
   const { question, selectedAnswer, correctAnswer, options, topic, subject } = await req.json()
@@ -23,7 +24,7 @@ CONTEXTO DEL PROGRAMA DE ANÁLISIS MATEMÁTICO I:
   }
   
   const { text } = await generateText({
-    model: 'google/gemini-2.0-flash',
+    model: google('gemini-1.5-flash'),
     messages: [
       {
         role: 'user',

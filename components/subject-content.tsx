@@ -84,10 +84,12 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
     if (selectedTopics.length === 0) return
     
+    console.log('[v0] Starting quiz with mode:', mode, 'topics:', selectedTopics)
     setIsLoading(true)
     setActiveView('loading')
     
     try {
+      console.log('[v0] Fetching questions from API...')
       const response = await fetch('/api/generate-quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,9 +101,12 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         })
       })
       
+      console.log('[v0] API response status:', response.status)
       const data = await response.json()
+      console.log('[v0] API response data:', data)
       
       if (data.questions && data.questions.length > 0) {
+        console.log('[v0] Questions received, starting quiz with', data.questions.length, 'questions')
         startQuiz(
           {
             subject: subject.id,
@@ -113,9 +118,11 @@ export function SubjectContent({ subject }: SubjectContentProps) {
           data.questions
         )
       } else {
+        console.log('[v0] No questions received, returning to dashboard')
         setActiveView('dashboard')
       }
-    } catch {
+    } catch (error) {
+      console.log('[v0] Error fetching questions:', error)
       setActiveView('dashboard')
     } finally {
       setIsLoading(false)
