@@ -2,10 +2,11 @@
 
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle, X, ChevronRight } from 'lucide-react'
+import { AlertTriangle, X, ChevronRight, Zap } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import type { WeakPoint } from '@/lib/types'
 import { subjects } from '@/lib/data'
+import { cn } from '@/lib/utils'
 
 interface WeakPointsSectionProps {
   weakPoints: WeakPoint[]
@@ -44,29 +45,32 @@ export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
   }, {} as Record<string, WeakPoint[]>)
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="w-5 h-5 text-destructive" />
-        <h3 className="font-semibold text-foreground">Temas a Reforzar</h3>
+    <section className="space-y-3 mt-6">
+      <div className="flex items-center gap-2 px-1">
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-white" />
+        </div>
+        <h3 className="font-bold text-foreground">Temas a Reforzar</h3>
       </div>
 
-      <Card className="p-4 border-destructive/20 bg-destructive/5">
-        <p className="text-sm text-muted-foreground mb-4">
-          Estos temas necesitan más práctica basado en tus errores recientes.
+      <Card className="p-4 border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50">
+        <p className="text-sm text-muted-foreground mb-4 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-orange-500" />
+          Estos temas necesitan mas practica.
         </p>
 
         <div className="space-y-4">
           {Object.entries(groupedWeakPoints).map(([subjectId, points]) => (
             <div key={subjectId} className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-sm font-bold text-foreground">
                   {getSubjectName(subjectId)}
                 </span>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => handlePractice(subjectId)}
-                  className="text-primary h-8 px-2"
+                  className="h-8 px-3 border-2 border-orange-300 bg-white hover:bg-orange-50 text-orange-600 font-bold"
                 >
                   Practicar
                   <ChevronRight className="w-4 h-4 ml-1" />
@@ -77,18 +81,21 @@ export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
                 {points.map((wp) => (
                   <div
                     key={wp.topic}
-                    className="flex items-center gap-2 bg-background rounded-full px-3 py-1.5 text-sm border border-border"
+                    className={cn(
+                      'flex items-center gap-2 bg-white rounded-xl px-3 py-2 text-sm',
+                      'border-2 border-orange-200 shadow-sm'
+                    )}
                   >
-                    <span className="text-foreground">{getTopicName(wp.topic)}</span>
-                    <span className="text-xs text-destructive font-medium">
-                      x{wp.count}
+                    <span className="text-foreground font-medium">{getTopicName(wp.topic)}</span>
+                    <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+                      {wp.count}
                     </span>
                     <button
                       onClick={() => removeWeakPoint(wp.topic)}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
                       aria-label={`Eliminar ${getTopicName(wp.topic)} de temas a reforzar`}
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
