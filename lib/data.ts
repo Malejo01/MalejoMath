@@ -1,5 +1,48 @@
 import type { Subject, Question } from './types'
 
+// Curriculum oficial de Algebra I - Estructura exacta de la catedra
+export const algebraCurriculum = {
+  subject: "Álgebra I",
+  units: [
+    {
+      id: 1,
+      title: "Lógica Proposicional",
+      topics: [
+        { id: "1.1", name: "Proposición, Conectivos, Implicaciones, Leyes" },
+        { id: "1.2", name: "Formas proposicionales, Cuantificadores, Conjunto de verdad" },
+        { id: "1.3", name: "Métodos de demostración (Directo, Indirecto, Contraejemplo, Inducción)" }
+      ]
+    },
+    {
+      id: 2,
+      title: "Ecuaciones e Inecuaciones",
+      topics: [
+        { id: "2.1", name: "Ecuaciones polinómicas (grado 1 y 2) y Números complejos" },
+        { id: "2.2", name: "Ecuaciones racionales, radicales, valor absoluto, exponenciales y logarítmicas" },
+        { id: "2.3", name: "Inecuaciones (polinómicas, racionales, radicales, valor absoluto)" }
+      ]
+    },
+    {
+      id: 3,
+      title: "Matrices y Sistemas de Ecuaciones Lineales",
+      topics: [
+        { id: "3.1", name: "Operaciones con matrices y Propiedades" },
+        { id: "3.2", name: "Matrices cuadradas, Invertibles y Determinantes" },
+        { id: "3.3", name: "Sistemas lineales, Método de Gauss y Teorema de Rouche-Frobenius" }
+      ]
+    },
+    {
+      id: 4,
+      title: "Análisis Combinatorio y Vectores",
+      topics: [
+        { id: "4.1", name: "Sumatoria, Productorio y Factorial" },
+        { id: "4.2", name: "Números combinatorios, Binomio de Newton, Permutación y Variación" },
+        { id: "4.3", name: "Vectores en R2 y R3 y sus operaciones" }
+      ]
+    }
+  ]
+}
+
 export const subjects: Subject[] = [
   {
     id: 'algebra',
@@ -10,29 +53,38 @@ export const subjects: Subject[] = [
     units: [
       {
         id: 'algebra-u1',
-        name: 'Unidad 1: Números y Conjuntos',
+        name: 'Unidad I: Lógica Proposicional',
         topics: [
-          { id: 'conjuntos', name: 'Teoría de Conjuntos', completed: false },
-          { id: 'numeros-reales', name: 'Números Reales', completed: false },
-          { id: 'numeros-complejos', name: 'Números Complejos', completed: false },
+          { id: '1.1', name: 'Proposición, Conectivos, Implicaciones, Leyes', completed: false },
+          { id: '1.2', name: 'Formas proposicionales, Cuantificadores, Conjunto de verdad', completed: false },
+          { id: '1.3', name: 'Métodos de demostración (Directo, Indirecto, Contraejemplo, Inducción)', completed: false },
         ]
       },
       {
         id: 'algebra-u2',
-        name: 'Unidad 2: Polinomios',
+        name: 'Unidad II: Ecuaciones e Inecuaciones',
         topics: [
-          { id: 'polinomios-ops', name: 'Operaciones con Polinomios', completed: false },
-          { id: 'factorizacion', name: 'Factorización', completed: false },
-          { id: 'raices', name: 'Raíces de Polinomios', completed: false },
+          { id: '2.1', name: 'Ecuaciones polinómicas (grado 1 y 2) y Números complejos', completed: false },
+          { id: '2.2', name: 'Ecuaciones racionales, radicales, valor absoluto, exponenciales y logarítmicas', completed: false },
+          { id: '2.3', name: 'Inecuaciones (polinómicas, racionales, radicales, valor absoluto)', completed: false },
         ]
       },
       {
         id: 'algebra-u3',
-        name: 'Unidad 3: Matrices y Sistemas',
+        name: 'Unidad III: Matrices y Sistemas',
         topics: [
-          { id: 'matrices', name: 'Matrices y Determinantes', completed: false },
-          { id: 'sistemas-lineales', name: 'Sistemas de Ecuaciones Lineales', completed: false },
-          { id: 'espacios-vectoriales', name: 'Espacios Vectoriales', completed: false },
+          { id: '3.1', name: 'Operaciones con matrices y Propiedades', completed: false },
+          { id: '3.2', name: 'Matrices cuadradas, Invertibles y Determinantes', completed: false },
+          { id: '3.3', name: 'Sistemas lineales, Método de Gauss y Teorema de Rouche-Frobenius', completed: false },
+        ]
+      },
+      {
+        id: 'algebra-u4',
+        name: 'Unidad IV: Combinatoria y Vectores',
+        topics: [
+          { id: '4.1', name: 'Sumatoria, Productorio y Factorial', completed: false },
+          { id: '4.2', name: 'Números combinatorios, Binomio de Newton, Permutación y Variación', completed: false },
+          { id: '4.3', name: 'Vectores en R2 y R3 y sus operaciones', completed: false },
         ]
       }
     ]
@@ -46,29 +98,38 @@ export const subjects: Subject[] = [
     units: [
       {
         id: 'analisis-u1',
-        name: 'Unidad 1: Límites',
+        name: 'Unidad I: Límites y Continuidad',
         topics: [
-          { id: 'limites-intro', name: 'Introducción a Límites', completed: false },
-          { id: 'limites-laterales', name: 'Límites Laterales', completed: false },
-          { id: 'limites-infinito', name: 'Límites al Infinito', completed: false },
+          { id: 'lim-1', name: 'Concepto de límite y propiedades', completed: false },
+          { id: 'lim-2', name: 'Límites laterales e infinitos', completed: false },
+          { id: 'lim-3', name: 'Continuidad de funciones', completed: false },
         ]
       },
       {
         id: 'analisis-u2',
-        name: 'Unidad 2: Derivadas',
+        name: 'Unidad II: Derivadas',
         topics: [
-          { id: 'derivadas-def', name: 'Definición de Derivada', completed: false },
-          { id: 'reglas-derivacion', name: 'Reglas de Derivación', completed: false },
-          { id: 'derivadas-aplicaciones', name: 'Aplicaciones de Derivadas', completed: false },
+          { id: 'der-1', name: 'Definición y reglas de derivación', completed: false },
+          { id: 'der-2', name: 'Derivadas de funciones compuestas', completed: false },
+          { id: 'der-3', name: 'Aplicaciones de la derivada', completed: false },
         ]
       },
       {
         id: 'analisis-u3',
-        name: 'Unidad 3: Integrales',
+        name: 'Unidad III: Integrales',
         topics: [
-          { id: 'integrales-indef', name: 'Integrales Indefinidas', completed: false },
-          { id: 'integrales-def', name: 'Integrales Definidas', completed: false },
-          { id: 'tecnicas-integracion', name: 'Técnicas de Integración', completed: false },
+          { id: 'int-1', name: 'Integral indefinida y primitivas', completed: false },
+          { id: 'int-2', name: 'Integral definida y Teorema Fundamental', completed: false },
+          { id: 'int-3', name: 'Técnicas de integración', completed: false },
+        ]
+      },
+      {
+        id: 'analisis-u4',
+        name: 'Unidad IV: Series y Sucesiones',
+        topics: [
+          { id: 'ser-1', name: 'Sucesiones numéricas', completed: false },
+          { id: 'ser-2', name: 'Series numéricas y convergencia', completed: false },
+          { id: 'ser-3', name: 'Series de potencias', completed: false },
         ]
       }
     ]
@@ -82,101 +143,96 @@ export const subjects: Subject[] = [
     units: [
       {
         id: 'prob-u1',
-        name: 'Unidad 1: Probabilidad Básica',
+        name: 'Unidad I: Estadística Descriptiva',
         topics: [
-          { id: 'combinatoria', name: 'Combinatoria', completed: false },
-          { id: 'probabilidad-clasica', name: 'Probabilidad Clásica', completed: false },
-          { id: 'prob-condicional', name: 'Probabilidad Condicional', completed: false },
+          { id: 'est-1', name: 'Medidas de tendencia central', completed: false },
+          { id: 'est-2', name: 'Medidas de dispersión', completed: false },
+          { id: 'est-3', name: 'Representaciones gráficas', completed: false },
         ]
       },
       {
         id: 'prob-u2',
-        name: 'Unidad 2: Variables Aleatorias',
+        name: 'Unidad II: Probabilidad',
         topics: [
-          { id: 'va-discretas', name: 'Variables Aleatorias Discretas', completed: false },
-          { id: 'va-continuas', name: 'Variables Aleatorias Continuas', completed: false },
-          { id: 'distribuciones', name: 'Distribuciones de Probabilidad', completed: false },
+          { id: 'prob-1', name: 'Combinatoria y conteo', completed: false },
+          { id: 'prob-2', name: 'Probabilidad clásica y axiomas', completed: false },
+          { id: 'prob-3', name: 'Probabilidad condicional y Bayes', completed: false },
         ]
       },
       {
         id: 'prob-u3',
-        name: 'Unidad 3: Estadística Inferencial',
+        name: 'Unidad III: Variables Aleatorias',
         topics: [
-          { id: 'estimacion', name: 'Estimación de Parámetros', completed: false },
-          { id: 'pruebas-hipotesis', name: 'Pruebas de Hipótesis', completed: false },
-          { id: 'regresion', name: 'Regresión Lineal', completed: false },
+          { id: 'va-1', name: 'Variables aleatorias discretas', completed: false },
+          { id: 'va-2', name: 'Variables aleatorias continuas', completed: false },
+          { id: 'va-3', name: 'Distribuciones especiales (Normal, Binomial, Poisson)', completed: false },
+        ]
+      },
+      {
+        id: 'prob-u4',
+        name: 'Unidad IV: Inferencia Estadística',
+        topics: [
+          { id: 'inf-1', name: 'Estimación puntual y por intervalos', completed: false },
+          { id: 'inf-2', name: 'Pruebas de hipótesis', completed: false },
+          { id: 'inf-3', name: 'Regresión y correlación', completed: false },
         ]
       }
     ]
   }
 ]
 
-// Sample questions for demonstration
+// Sample questions for demonstration (fallback if AI is not available)
 export const sampleQuestions: Record<string, Question[]> = {
-  'conjuntos': [
+  '1.1': [
     {
-      id: 'q1',
-      topic: 'conjuntos',
-      question: 'Sea $A = \\{1, 2, 3\\}$ y $B = \\{2, 3, 4\\}$. ¿Cuál es $A \\cap B$?',
-      options: ['$\\{2, 3\\}$', '$\\{1, 2, 3, 4\\}$', '$\\{1, 4\\}$', '$\\{2\\}$'],
+      id: 'q-log-1',
+      topic: '1.1',
+      topicName: 'Proposición, Conectivos, Implicaciones, Leyes',
+      question: 'Sea $p$: "Llueve" y $q$: "Hace frío". La expresión "Si llueve, entonces hace frío" se simboliza como:',
+      options: ['$p \\Rightarrow q$', '$p \\wedge q$', '$p \\vee q$', '$p \\Leftrightarrow q$'],
       correctAnswer: 0,
-      explanation: 'La intersección $A \\cap B$ contiene los elementos que pertenecen a ambos conjuntos. En este caso, 2 y 3 están en A y en B.'
+      explanation: 'La implicación "Si p entonces q" se simboliza con la flecha $\\Rightarrow$. Es el conectivo condicional.'
     },
     {
-      id: 'q2',
-      topic: 'conjuntos',
-      question: 'Si $|A| = 5$ y $|B| = 3$, y $A \\cap B = \\emptyset$, entonces $|A \\cup B| = $',
-      options: ['$8$', '$5$', '$3$', '$15$'],
+      id: 'q-log-2',
+      topic: '1.1',
+      topicName: 'Proposición, Conectivos, Implicaciones, Leyes',
+      question: 'La negación de $p \\wedge q$ según las Leyes de De Morgan es:',
+      options: ['$\\neg p \\vee \\neg q$', '$\\neg p \\wedge \\neg q$', '$p \\vee q$', '$\\neg(p \\vee q)$'],
       correctAnswer: 0,
-      explanation: 'Cuando los conjuntos son disjuntos ($A \\cap B = \\emptyset$), la cardinalidad de la unión es la suma de las cardinalidades: $|A \\cup B| = |A| + |B| = 5 + 3 = 8$.'
+      explanation: 'Por la Ley de De Morgan: $\\neg(p \\wedge q) \\equiv \\neg p \\vee \\neg q$. La negación de una conjunción es la disyunción de las negaciones.'
     }
   ],
-  'limites-intro': [
+  '3.3': [
     {
-      id: 'q3',
-      topic: 'limites-intro',
-      question: '¿Cuál es el valor de $\\lim_{x \\to 2} (3x + 1)$?',
-      options: ['$7$', '$6$', '$5$', '$8$'],
+      id: 'q-mat-1',
+      topic: '3.3',
+      topicName: 'Sistemas lineales, Método de Gauss y Teorema de Rouche-Frobenius',
+      question: 'Un sistema de ecuaciones lineales tiene infinitas soluciones cuando:',
+      options: [
+        '$rg(A) = rg(A|b) < n$ (número de incógnitas)',
+        '$rg(A) = rg(A|b) = n$',
+        '$rg(A) \\neq rg(A|b)$',
+        '$rg(A) > n$'
+      ],
       correctAnswer: 0,
-      explanation: 'Para funciones polinómicas, el límite se calcula por sustitución directa: $\\lim_{x \\to 2} (3x + 1) = 3(2) + 1 = 7$.'
-    },
-    {
-      id: 'q4',
-      topic: 'limites-intro',
-      question: 'El límite $\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$ es igual a:',
-      options: ['$1$', '$0$', '$\\infty$', 'No existe'],
-      correctAnswer: 0,
-      explanation: 'Este es un límite notable fundamental. $\\lim_{x \\to 0} \\frac{\\sin(x)}{x} = 1$ es un resultado que se demuestra usando el teorema del sandwich.'
+      explanation: 'Por el Teorema de Rouché-Frobenius, si los rangos son iguales pero menores que el número de incógnitas, el sistema es compatible indeterminado (infinitas soluciones).'
     }
   ],
-  'derivadas-def': [
+  '4.2': [
     {
-      id: 'q5',
-      topic: 'derivadas-def',
-      question: 'La derivada de $f(x) = x^3$ es:',
-      options: ['$3x^2$', '$x^2$', '$3x^3$', '$2x^3$'],
+      id: 'q-comb-1',
+      topic: '4.2',
+      topicName: 'Números combinatorios, Binomio de Newton, Permutación y Variación',
+      question: 'El desarrollo del Binomio de Newton $(a+b)^3$ es:',
+      options: [
+        '$a^3 + 3a^2b + 3ab^2 + b^3$',
+        '$a^3 + b^3$',
+        '$a^3 + 2a^2b + 2ab^2 + b^3$',
+        '$a^3 - 3a^2b + 3ab^2 - b^3$'
+      ],
       correctAnswer: 0,
-      explanation: 'Aplicando la regla de la potencia: $\\frac{d}{dx}(x^n) = nx^{n-1}$. Para $x^3$: $\\frac{d}{dx}(x^3) = 3x^2$.'
-    }
-  ],
-  'combinatoria': [
-    {
-      id: 'q6',
-      topic: 'combinatoria',
-      question: '¿De cuántas formas se pueden ordenar 4 libros diferentes en una estantería?',
-      options: ['$24$', '$16$', '$12$', '$4$'],
-      correctAnswer: 0,
-      explanation: 'Es una permutación de 4 elementos: $P_4 = 4! = 4 \\times 3 \\times 2 \\times 1 = 24$.'
-    }
-  ],
-  'matrices': [
-    {
-      id: 'q7',
-      topic: 'matrices',
-      question: 'Sea $A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}$. El determinante de $A$ es:',
-      options: ['$-2$', '$2$', '$10$', '$-10$'],
-      correctAnswer: 0,
-      explanation: 'El determinante de una matriz 2x2 se calcula como $det(A) = ad - bc = (1)(4) - (2)(3) = 4 - 6 = -2$.'
+      explanation: 'Aplicando el Binomio de Newton: $(a+b)^3 = \\binom{3}{0}a^3 + \\binom{3}{1}a^2b + \\binom{3}{2}ab^2 + \\binom{3}{3}b^3 = a^3 + 3a^2b + 3ab^2 + b^3$.'
     }
   ]
 }
