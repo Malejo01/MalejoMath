@@ -159,12 +159,50 @@ Responde SOLO con el JSON, sin texto adicional.`,
       
       jsonText = jsonText.trim()
       
+      // Sanitizar caracteres de escape problematicos en LaTeX
+      // Gemini a veces genera \frac como escape sequence invalido
+      jsonText = jsonText
+        .replace(/\\f(?!alse)/g, '\\\\f')  // \f -> \\f (except \false)
+        .replace(/\\n(?!ull)/g, '\\\\n')   // \n -> \\n (except \null) pero solo fuera de strings reales
+        .replace(/\\t(?!rue)/g, '\\\\t')   // \t -> \\t (except \true)
+        .replace(/\\r/g, '\\\\r')          // \r -> \\r
+        .replace(/\\b(?!ase)/g, '\\\\b')   // \b -> \\b (except \base)
+      
       const parsed = JSON.parse(jsonText)
       questions = parsed.questions || []
       console.log('[v0] Parsed questions:', questions.length)
     } catch (parseError) {
       console.error('[v0] JSON parse error:', parseError)
       console.error('[v0] Raw text:', text?.substring(0, 500))
+      
+      // Intento alternativo: extraer preguntas manualmente con regex
+      try {
+        const questionsMatch = text?.match(/"questions"\s*:\s*\[([\s\S]*)\]/)?.[1]
+        if (questionsMatch) {
+          // Intentar parsear objeto por objeto
+          const objectMatches = questionsMatch.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)
+          if (objectMatches) {
+            questions = objectMatches.map((obj, index) => {
+              try {
+                return JSON.parse(obj.replace(/\\f/g, '\\\\f').replace(/\\n/g, '\\\\n'))
+              } catch {
+                return {
+                  id: `q${index + 1}`,
+                  topic: 'general',
+                  topicName: 'General',
+                  question: 'Error al parsear pregunta',
+                  options: ['A', 'B', 'C', 'D'],
+                  correctAnswer: 0,
+                  explanation: 'Error de formato'
+                }
+              }
+            }).filter(q => q.question !== 'Error al parsear pregunta')
+            console.log('[v0] Recovered questions via regex:', questions.length)
+          }
+        }
+      } catch (regexError) {
+        console.error('[v0] Regex recovery failed:', regexError)
+      }
     }
     
     return Response.json({ questions })
