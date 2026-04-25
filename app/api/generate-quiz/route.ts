@@ -1,92 +1,57 @@
-import { generateText, Output } from 'ai'
+import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
-import { z } from 'zod'
 
 // Curriculum oficial inyectado en el contexto de Gemini
 const ALGEBRA_CURRICULUM = `
 PROGRAMA OFICIAL DE ÁLGEBRA I:
 
 Unidad I: Lógica Proposicional
-- Proposición, Conectivos lógicos (conjunción, disyunción, negación, implicación, bicondicional)
-- Tablas de verdad, Tautologías, Contradicciones, Contingencias
-- Leyes lógicas fundamentales (De Morgan, Conmutativas, Asociativas, Distributivas)
-- Formas proposicionales, Cuantificadores universales y existenciales
-- Conjunto de verdad de una proposición abierta
-- Métodos de demostración: Directo, Indirecto (Contradicción), Contrarecíproco, Contraejemplo, Inducción Completa
+- Proposición, Conectivos lógicos, Tablas de verdad, Tautologías
+- Leyes lógicas (De Morgan, Conmutativas, Asociativas, Distributivas)
+- Cuantificadores universales y existenciales
+- Métodos de demostración: Directo, Indirecto, Contraejemplo, Inducción
 
 Unidad II: Ecuaciones e Inecuaciones
-- Ecuaciones polinómicas de grado 1 y 2, Fórmula cuadrática, Discriminante
+- Ecuaciones polinómicas, Fórmula cuadrática, Discriminante
 - Números complejos: forma binómica, conjugado, módulo, operaciones
-- Ecuaciones racionales con parámetros
-- Ecuaciones con radicales y valor absoluto
-- Ecuaciones exponenciales y logarítmicas (propiedades de logaritmos)
-- Inecuaciones polinómicas (método de signos)
-- Inecuaciones racionales, con radicales y valor absoluto
+- Ecuaciones racionales, con radicales, exponenciales y logarítmicas
+- Inecuaciones polinómicas, racionales, con valor absoluto
 
-Unidad III: Matrices y Sistemas de Ecuaciones Lineales
-- Operaciones con matrices: suma, producto por escalar, producto matricial
-- Propiedades del álgebra de matrices
-- Matrices cuadradas especiales: identidad, diagonal, triangular, simétrica
-- Matriz inversa: definición, cálculo, propiedades
-- Determinantes: definición, propiedades, cálculo por cofactores
-- Sistemas de ecuaciones lineales: clasificación (compatible determinado/indeterminado, incompatible)
-- Método de Gauss (escalonamiento) - ESTÁNDAR DE LA CÁTEDRA
-- Teorema de Rouché-Frobenius: rango de matriz, rango de matriz ampliada
-- Regla de Cramer (solo para sistemas con solución única)
+Unidad III: Matrices y Sistemas
+- Operaciones con matrices, Matriz inversa
+- Determinantes: cálculo y propiedades
+- Sistemas de ecuaciones: Método de Gauss (ESTÁNDAR DE LA CÁTEDRA)
+- Teorema de Rouché-Frobenius, Regla de Cramer
 
-Unidad IV: Análisis Combinatorio y Vectores
-- Sumatoria: propiedades, fórmulas de sumas notables
-- Productorio y Factorial
-- Números combinatorios: definición, propiedades, Triángulo de Pascal
-- Binomio de Newton: desarrollo, término general
-- Permutaciones (con y sin repetición)
-- Variaciones (con y sin repetición)
-- Combinaciones
-- Vectores en R2 y R3: definición, componentes, representación gráfica
-- Operaciones con vectores: suma, resta, producto por escalar
-- Producto escalar (punto): definición, propiedades, ángulo entre vectores
-- Producto vectorial (en R3): definición, propiedades
+Unidad IV: Combinatoria y Vectores
+- Sumatoria, Productorio, Factorial
+- Números combinatorios, Binomio de Newton
+- Permutaciones, Variaciones, Combinaciones
+- Vectores en R2 y R3, Producto escalar y vectorial
 `
 
 const ANALISIS_CURRICULUM = `
 PROGRAMA OFICIAL DE ANÁLISIS MATEMÁTICO I:
 
 Unidad I: Límites y Continuidad
-- Concepto intuitivo y formal de límite (epsilon-delta)
-- Propiedades de los límites
-- Límites laterales
-- Límites infinitos y al infinito
-- Asíntotas horizontales y verticales
-- Límites notables: lim(sin(x)/x), lim((1+1/x)^x)
-- Continuidad: definición, tipos de discontinuidad
-- Teoremas sobre funciones continuas (Bolzano, Weierstrass)
+- Límites: definición, propiedades, límites laterales
+- Límites notables, Asíntotas
+- Continuidad y tipos de discontinuidad
 
 Unidad II: Derivadas
-- Definición de derivada como límite
-- Interpretación geométrica: recta tangente
-- Reglas de derivación: suma, producto, cociente
-- Derivada de funciones compuestas (regla de la cadena)
-- Derivadas de funciones elementales (polinómicas, trigonométricas, exponenciales, logarítmicas)
-- Derivadas de orden superior
-- Aplicaciones: máximos y mínimos, puntos de inflexión, concavidad
-- Teorema de Rolle y del Valor Medio
+- Definición de derivada, Interpretación geométrica
+- Reglas de derivación: suma, producto, cociente, cadena
+- Aplicaciones: máximos, mínimos, concavidad
 - Regla de L'Hôpital
 
 Unidad III: Integrales
-- Integral indefinida: primitiva, constante de integración
-- Propiedades de la integral indefinida
-- Métodos de integración: sustitución, partes, fracciones parciales
-- Integral definida: definición de Riemann
-- Teorema Fundamental del Cálculo
+- Integral indefinida, Métodos de integración
+- Integral definida, Teorema Fundamental del Cálculo
 - Cálculo de áreas y volúmenes
-- Integrales impropias
 
-Unidad IV: Series y Sucesiones
-- Sucesiones numéricas: definición, convergencia
-- Series numéricas: definición, suma parcial
-- Criterios de convergencia: comparación, razón, raíz
-- Series alternadas, convergencia absoluta y condicional
-- Series de potencias: radio e intervalo de convergencia
+Unidad IV: Series
+- Sucesiones y series numéricas
+- Criterios de convergencia
 - Series de Taylor y Maclaurin
 `
 
@@ -94,60 +59,31 @@ const PROBABILIDAD_CURRICULUM = `
 PROGRAMA OFICIAL DE PROBABILIDAD Y ESTADÍSTICA:
 
 Unidad I: Estadística Descriptiva
-- Población y muestra
-- Variables estadísticas: cualitativas y cuantitativas
 - Medidas de tendencia central: media, mediana, moda
-- Medidas de dispersión: varianza, desviación estándar, coeficiente de variación
-- Medidas de posición: cuartiles, percentiles
-- Representaciones gráficas: histogramas, polígonos de frecuencia, diagramas de caja
+- Medidas de dispersión: varianza, desviación estándar
+- Representaciones gráficas
 
 Unidad II: Probabilidad
-- Experimento aleatorio, espacio muestral, eventos
-- Técnicas de conteo: principio de multiplicación
-- Permutaciones y combinaciones
-- Definición clásica de probabilidad
-- Axiomas de Kolmogorov
-- Probabilidad condicional
-- Teorema de Bayes
-- Eventos independientes
+- Espacio muestral, eventos, técnicas de conteo
+- Probabilidad clásica, condicional
+- Teorema de Bayes, Independencia
 
 Unidad III: Variables Aleatorias
-- Variable aleatoria discreta: función de probabilidad
-- Esperanza y varianza de v.a. discretas
-- Distribuciones discretas: Bernoulli, Binomial, Poisson
-- Variable aleatoria continua: función de densidad
-- Esperanza y varianza de v.a. continuas
-- Distribución Normal: propiedades, estandarización, tabla Z
-- Distribución Exponencial y Uniforme
+- Variables discretas: Binomial, Poisson
+- Variables continuas: Normal, Exponencial
+- Esperanza y varianza
 
 Unidad IV: Inferencia Estadística
-- Distribuciones muestrales
-- Estimación puntual: propiedades de estimadores
-- Intervalos de confianza para media y proporción
-- Pruebas de hipótesis: conceptos fundamentales
-- Test de hipótesis para media y proporción
-- Errores tipo I y II, nivel de significancia, p-valor
-- Regresión lineal simple: modelo, estimación por mínimos cuadrados
-- Coeficiente de correlación de Pearson
+- Intervalos de confianza
+- Pruebas de hipótesis
+- Regresión lineal, Correlación
 `
-
-const questionSchema = z.object({
-  questions: z.array(z.object({
-    id: z.string(),
-    topic: z.string(),
-    topicName: z.string(),
-    question: z.string(),
-    options: z.array(z.string()).min(4).max(6),
-    correctAnswer: z.number(),
-    explanation: z.string(),
-  }))
-})
 
 export async function POST(req: Request) {
   const { subject, topics, mode, previousQuestionIds } = await req.json()
   
   const questionCount = mode === 'teorico' ? 20 : 10
-  const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name} (id: ${t.id})`).join('\n')
+  const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
   
   // Seleccionar el curriculum apropiado
   let curriculum = ALGEBRA_CURRICULUM
@@ -158,72 +94,80 @@ export async function POST(req: Request) {
   }
   
   const modeDescription = mode === 'teorico' 
-    ? `MODO TEÓRICO: Enfócate en conceptos teóricos, definiciones formales, propiedades, teoremas y demostraciones. 
-       Las preguntas deben evaluar la comprensión conceptual profunda, no cálculos numéricos.
-       Ejemplos: "¿Cuál es la definición de...?", "¿Qué propiedad establece que...?", "¿Cuál de las siguientes afirmaciones es verdadera?"`
-    : `MODO PRÁCTICO: Enfócate en ejercicios prácticos y problemas de cálculo que requieran aplicar fórmulas y resolver problemas numéricos.
-       Los ejercicios deben ser de dificultad universitaria de primer año.
-       Ejemplos: "Resuelve la ecuación...", "Calcula el determinante de...", "Encuentra la derivada de..."`
+    ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
+    : 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
 
-  const previousIdsNote = previousQuestionIds?.length > 0 
-    ? `\n\nIMPORTANTE: Las siguientes preguntas ya fueron usadas anteriormente. Genera preguntas COMPLETAMENTE DIFERENTES en contenido y estructura:\n${previousQuestionIds.join(', ')}`
+  const previousNote = previousQuestionIds?.length > 0 
+    ? 'Genera preguntas diferentes a las anteriores.'
     : ''
 
-  // Instrucciones especiales según la unidad
-  let specialInstructions = ''
-  const topicIds = topics.map((t: { id: string }) => t.id)
-  
-  if (topicIds.some((id: string) => id.startsWith('3.'))) {
-    specialInstructions = `
-INSTRUCCIÓN ESPECIAL PARA UNIDAD III (Matrices y Sistemas):
-- Los ejercicios de sistemas de ecuaciones lineales DEBEN usar el Método de Gauss (escalonamiento) como método estándar de la cátedra.
-- Para clasificar sistemas, usa el Teorema de Rouché-Frobenius comparando rg(A) con rg(A|b).
-- La Regla de Cramer solo debe mencionarse para sistemas con solución única.
-`
-  }
-
   try {
-    const { output } = await generateText({
+    const { text } = await generateText({
       model: google('gemini-2.5-flash'),
-      output: Output.object({
-        schema: questionSchema,
-      }),
-      messages: [
-        {
-          role: 'user',
-          content: `Eres un profesor universitario experto en matemáticas de primer año. Tu tarea es generar exactamente ${questionCount} preguntas de opción múltiple para un cuestionario universitario.
+      prompt: `Genera ${questionCount} preguntas de opción múltiple para un examen universitario.
 
 ${curriculum}
 
 ${modeDescription}
 
 MATERIA: ${subject}
-TEMAS SELECCIONADOS POR EL ALUMNO:
+TEMAS: 
 ${topicsText}
-${previousIdsNote}
-${specialInstructions}
 
-REGLAS ESTRICTAS:
-1. Genera las preguntas basándote ESTRICTAMENTE en el programa proporcionado arriba.
-2. NO inventes temas que no estén en el programa.
-3. Cada pregunta debe tener entre 4 y 6 opciones de respuesta.
-4. Solo UNA opción es correcta (correctAnswer es el índice 0-based).
-5. Usa notación LaTeX para TODAS las fórmulas matemáticas (ej: $x^2$, $\\frac{a}{b}$, $\\int_0^1 f(x)dx$, $\\lim_{x \\to 0}$).
-6. La explicación debe ser concisa (2-3 oraciones) explicando POR QUÉ la respuesta correcta es correcta.
-7. Las opciones incorrectas deben ser plausibles (errores comunes de estudiantes).
-8. Distribuye las preguntas equitativamente entre los temas seleccionados.
-9. Varía la dificultad: 30% fácil, 50% media, 20% difícil.
-10. Genera IDs únicos descriptivos para cada pregunta (ej: "q-logica-prop-1", "q-matrices-gauss-2").
+${previousNote}
 
-Genera las ${questionCount} preguntas ahora en formato JSON.`
-        }
-      ],
+FORMATO JSON REQUERIDO:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "topic": "tema_id",
+      "topicName": "Nombre del Tema",
+      "question": "Texto de la pregunta con LaTeX si es necesario usando $formula$",
+      "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
+      "correctAnswer": 0,
+      "explanation": "Explicación breve de por qué es correcta"
+    }
+  ]
+}
+
+REGLAS:
+- Cada pregunta tiene 4-6 opciones
+- correctAnswer es el índice (0-based) de la opción correcta
+- Usa LaTeX para fórmulas: $x^2$, $\\frac{a}{b}$
+- Distribuye las preguntas entre los temas seleccionados
+
+Responde SOLO con el JSON, sin texto adicional.`,
       maxOutputTokens: 8000,
       temperature: 0.8,
     })
 
-    console.log('[v0] Generated questions:', output?.questions?.length || 0)
-    return Response.json({ questions: output?.questions || [] })
+    console.log('[v0] Raw response length:', text?.length || 0)
+    
+    // Parsear el JSON de la respuesta
+    let questions = []
+    try {
+      // Limpiar la respuesta - puede venir con markdown code blocks
+      let jsonText = text || ''
+      
+      // Remover code blocks si existen
+      if (jsonText.includes('```json')) {
+        jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '')
+      } else if (jsonText.includes('```')) {
+        jsonText = jsonText.replace(/```\n?/g, '')
+      }
+      
+      jsonText = jsonText.trim()
+      
+      const parsed = JSON.parse(jsonText)
+      questions = parsed.questions || []
+      console.log('[v0] Parsed questions:', questions.length)
+    } catch (parseError) {
+      console.error('[v0] JSON parse error:', parseError)
+      console.error('[v0] Raw text:', text?.substring(0, 500))
+    }
+    
+    return Response.json({ questions })
   } catch (error) {
     console.error('[v0] Error generating quiz:', error)
     return Response.json({ questions: [], error: String(error) }, { status: 500 })
