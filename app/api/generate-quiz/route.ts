@@ -184,7 +184,7 @@ INSTRUCCIÓN ESPECIAL PARA UNIDAD III (Matrices y Sistemas):
 
   try {
     const { output } = await generateText({
-      model: google('gemini-2.0-flash'),
+      model: google('gemini-2.5-flash'),
       output: Output.object({
         schema: questionSchema,
       }),
