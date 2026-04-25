@@ -1,6 +1,10 @@
 import { generateObject } from 'ai'
-import { google } from '@ai-sdk/google'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
+
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+});
 
 // Schema Zod — obliga a Gemini a devolver un objeto válido
 const quizSchema = z.object({
@@ -117,45 +121,65 @@ export async function POST(req: Request) {
 
   try {
     const { object } = await generateObject({
-      model: google('gemini-1.5-flash'),
+      model: google('gemini-2.5-flash'),
       schema: quizSchema,
-      system: `Eres un generador de exámenes universitarios de matemáticas. Devuelves preguntas de opción múltiple en formato estructurado.
+      system: `Eres un generador de exámenes universitarios de matemáticas. Devuelves preguntas de opción múltiple en formato JSON puro.
 
-REGLAS CRÍTICAS PARA LaTeX:
-- Usa notación LaTeX para TODAS las fórmulas matemáticas.
-- Usa delimitadores $...$ para fórmulas inline.
-- Usa doble backslash para comandos LaTeX: \\\\frac{a}{b}, \\\\sqrt{x}, \\\\int, \\\\sum, \\\\lim, \\\\infty, etc.
-- Esto es OBLIGATORIO: cada comando LaTeX debe llevar doble backslash (\\\\) para que el JSON sea válido.
-- Ejemplo correcto: "$\\\\frac{1}{2} + \\\\sqrt{3}$"
-- Ejemplo incorrecto: "$\\frac{1}{2} + \\sqrt{3}$"`,
-      prompt: `Genera ${questionCount} preguntas de opción múltiple para un examen universitario.
+REGLAS DE ORO PARA LaTeX:
+- Usa delimitadores $...$ para TODO el contenido matemático.
+- OBLIGATORIO: Usa DOBLE backslash (\\\\) en todos los comandos LaTeX.
+- Ejemplo: "$\\\\frac{x^2}{\\\\sqrt{y}}$"
 
+EJEMPLO DE FORMATO REQUERIDO:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "topic": "gauss",
+      "topicName": "Método de Gauss",
+      "question": "¿Cuál es el valor de $\\\\alpha$?",
+      "options": ["Opción 1", "Opción 2", "Opción 3", "Opción 4"],
+      "correctAnswer": 0,
+      "explanation": "Porque $\\\\alpha$ es constante."
+    }
+  ]
+}`,
+      prompt: `Genera ${questionCount} preguntas de opción múltiple para un examen universitario de ${subject}.
+
+CURRICULUM:
 ${curriculum}
 
+CONTEXTO:
 ${modeDescription}
 
-MATERIA: ${subject}
-TEMAS: 
+TEMAS A EVALUAR: 
 ${topicsText}
 
 ${previousNote}
 
-REGLAS:
-- Cada pregunta tiene 4-6 opciones
-- correctAnswer es el índice (0-based) de la opción correcta
-- Distribuye las preguntas entre los temas seleccionados
-- El campo "id" debe ser "q1", "q2", etc.
-- El campo "topic" debe coincidir con el id del tema
-- El campo "topicName" debe ser el nombre legible del tema`,
+REQUISITOS:
+- Cada pregunta debe tener entre 4 y 6 opciones.
+- 'correctAnswer' es el índice numérico (0, 1, 2...).
+- Usa el curriculum para asegurar que el nivel es universitario.
+- Distribuye las preguntas equitativamente entre los temas proporcionados.`,
       maxOutputTokens: 8000,
-      temperature: 0.8,
+      temperature: 0.7,
     })
 
-    console.log('[generateObject] Parsed questions:', object.questions.length)
+    console.log('[generateObject] Success! Parsed questions:', object.questions.length)
 
     return Response.json({ questions: object.questions })
-  } catch (error) {
-    console.error('[generateObject] Error generating quiz:', error)
-    return Response.json({ questions: [], error: String(error) }, { status: 500 })
+  } catch (error: any) {
+    console.error('[generateObject] DETAILED ERROR:', {
+      message: error.message,
+      name: error.name,
+      cause: error.cause,
+      stack: error.stack,
+      data: error.data // Algunos proveedores incluyen datos extras aqui
+    })
+    return Response.json({ 
+      questions: [], 
+      error: error.message || 'Error interno al generar el quiz'
+    }, { status: 500 })
   }
 }
