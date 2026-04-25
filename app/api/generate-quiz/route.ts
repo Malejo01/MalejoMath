@@ -1,5 +1,19 @@
-import { generateText } from 'ai'
+import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
+import { z } from 'zod'
+
+// Schema Zod — obliga a Gemini a devolver un objeto válido
+const quizSchema = z.object({
+  questions: z.array(z.object({
+    id: z.string(),
+    topic: z.string(),
+    topicName: z.string(),
+    question: z.string(),
+    options: z.array(z.string()),
+    correctAnswer: z.number(),
+    explanation: z.string()
+  }))
+})
 
 // Curriculum oficial inyectado en el contexto de Gemini
 const ALGEBRA_CURRICULUM = `
@@ -81,10 +95,10 @@ Unidad IV: Inferencia Estadística
 
 export async function POST(req: Request) {
   const { subject, topics, mode, previousQuestionIds } = await req.json()
-  
+
   const questionCount = mode === 'teorico' ? 20 : 10
   const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
-  
+
   // Seleccionar el curriculum apropiado
   let curriculum = ALGEBRA_CURRICULUM
   if (subject.toLowerCase().includes('análisis') || subject.toLowerCase().includes('analisis')) {
@@ -92,18 +106,28 @@ export async function POST(req: Request) {
   } else if (subject.toLowerCase().includes('probabilidad') || subject.toLowerCase().includes('estadística')) {
     curriculum = PROBABILIDAD_CURRICULUM
   }
-  
-  const modeDescription = mode === 'teorico' 
+
+  const modeDescription = mode === 'teorico'
     ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
     : 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
 
-  const previousNote = previousQuestionIds?.length > 0 
+  const previousNote = previousQuestionIds?.length > 0
     ? 'Genera preguntas diferentes a las anteriores.'
     : ''
 
   try {
-    const { text } = await generateText({
-      model: google('gemini-2.5-flash'),
+    const { object } = await generateObject({
+      model: google('gemini-1.5-flash'),
+      schema: quizSchema,
+      system: `Eres un generador de exámenes universitarios de matemáticas. Devuelves preguntas de opción múltiple en formato estructurado.
+
+REGLAS CRÍTICAS PARA LaTeX:
+- Usa notación LaTeX para TODAS las fórmulas matemáticas.
+- Usa delimitadores $...$ para fórmulas inline.
+- Usa doble backslash para comandos LaTeX: \\\\frac{a}{b}, \\\\sqrt{x}, \\\\int, \\\\sum, \\\\lim, \\\\infty, etc.
+- Esto es OBLIGATORIO: cada comando LaTeX debe llevar doble backslash (\\\\) para que el JSON sea válido.
+- Ejemplo correcto: "$\\\\frac{1}{2} + \\\\sqrt{3}$"
+- Ejemplo incorrecto: "$\\frac{1}{2} + \\sqrt{3}$"`,
       prompt: `Genera ${questionCount} preguntas de opción múltiple para un examen universitario.
 
 ${curriculum}
@@ -116,123 +140,22 @@ ${topicsText}
 
 ${previousNote}
 
-FORMATO JSON REQUERIDO:
-{
-  "questions": [
-    {
-      "id": "q1",
-      "topic": "tema_id",
-      "topicName": "Nombre del Tema",
-      "question": "Texto de la pregunta con LaTeX si es necesario usando $formula$",
-      "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
-      "correctAnswer": 0,
-      "explanation": "Explicación breve de por qué es correcta"
-    }
-  ]
-}
-
 REGLAS:
 - Cada pregunta tiene 4-6 opciones
 - correctAnswer es el índice (0-based) de la opción correcta
-- Usa LaTeX para fórmulas: $x^2$, $\\frac{a}{b}$
 - Distribuye las preguntas entre los temas seleccionados
-
-Responde SOLO con el JSON, sin texto adicional.`,
+- El campo "id" debe ser "q1", "q2", etc.
+- El campo "topic" debe coincidir con el id del tema
+- El campo "topicName" debe ser el nombre legible del tema`,
       maxOutputTokens: 8000,
       temperature: 0.8,
     })
 
-    console.log('[v0] Raw response length:', text?.length || 0)
-    
-    // Funcion para sanitizar JSON con LaTeX
-    function sanitizeJsonWithLatex(jsonStr: string): string {
-      let result = jsonStr
-      
-      // Remover code blocks de markdown
-      result = result.replace(/```json\s*/gi, '').replace(/```\s*/g, '')
-      result = result.trim()
-      
-      // Escapar backslashes dentro de strings JSON para LaTeX
-      // Esto maneja \frac, \sqrt, \int, etc que no son escapes JSON validos
-      const latexEscapes = ['frac', 'sqrt', 'int', 'sum', 'prod', 'lim', 'infty', 'alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'pi', 'sigma', 'omega', 'cdot', 'times', 'div', 'pm', 'mp', 'leq', 'geq', 'neq', 'approx', 'equiv', 'subset', 'supset', 'cup', 'cap', 'in', 'notin', 'forall', 'exists', 'neg', 'land', 'lor', 'to', 'rightarrow', 'leftarrow', 'Rightarrow', 'Leftarrow', 'partial', 'nabla', 'sin', 'cos', 'tan', 'log', 'ln', 'exp', 'binom', 'text', 'mathbb', 'mathbf', 'mathrm', 'left', 'right', 'begin', 'end']
-      
-      for (const cmd of latexEscapes) {
-        // Reemplazar \cmd con \\cmd (escapar el backslash)
-        const regex = new RegExp(`\\\\${cmd}(?![a-zA-Z])`, 'g')
-        result = result.replace(regex, `\\\\${cmd}`)
-      }
-      
-      // Manejar escapes JSON especiales que podrian confundirse
-      // \n, \t, \r, \f, \b dentro de strings LaTeX
-      result = result.replace(/\\n(?![a-zA-Z])/g, (match, offset) => {
-        // Verificar si estamos dentro de un string JSON (despues de : ")
-        const before = result.substring(Math.max(0, offset - 20), offset)
-        if (before.includes('"') && !before.includes('correctAnswer')) {
-          return '\\\\n'
-        }
-        return match
-      })
-      
-      return result
-    }
-    
-    // Parsear el JSON de la respuesta
-    let questions = []
-    try {
-      const jsonText = sanitizeJsonWithLatex(text || '')
-      const parsed = JSON.parse(jsonText)
-      questions = parsed.questions || []
-      console.log('[v0] Parsed questions:', questions.length)
-    } catch (parseError) {
-      console.error('[v0] JSON parse error:', parseError)
-      
-      // Intento alternativo: usar eval con JSON5-like parsing
-      try {
-        let cleanText = text || ''
-        cleanText = cleanText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-        
-        // Extraer el array de questions usando un enfoque mas simple
-        const startIdx = cleanText.indexOf('"questions"')
-        if (startIdx !== -1) {
-          const arrayStart = cleanText.indexOf('[', startIdx)
-          if (arrayStart !== -1) {
-            let depth = 0
-            let arrayEnd = arrayStart
-            for (let i = arrayStart; i < cleanText.length; i++) {
-              if (cleanText[i] === '[') depth++
-              if (cleanText[i] === ']') depth--
-              if (depth === 0) {
-                arrayEnd = i
-                break
-              }
-            }
-            
-            const questionsArray = cleanText.substring(arrayStart, arrayEnd + 1)
-            // Sanitizar y parsear
-            const sanitized = sanitizeJsonWithLatex(questionsArray)
-            questions = JSON.parse(sanitized)
-            console.log('[v0] Recovered questions via extraction:', questions.length)
-          }
-        }
-      } catch (recoveryError) {
-        console.error('[v0] Recovery failed:', recoveryError)
-        
-        // Ultimo recurso: generar preguntas de fallback
-        questions = [{
-          id: 'fallback-1',
-          topic: 'general',
-          topicName: 'General',
-          question: 'Error al generar preguntas. Por favor, intenta nuevamente.',
-          options: ['Reintentar', 'Volver al inicio', 'Contactar soporte', 'Reportar error'],
-          correctAnswer: 0,
-          explanation: 'Hubo un problema de comunicacion con el servidor de IA.'
-        }]
-      }
-    }
-    
-    return Response.json({ questions })
+    console.log('[generateObject] Parsed questions:', object.questions.length)
+
+    return Response.json({ questions: object.questions })
   } catch (error) {
-    console.error('[v0] Error generating quiz:', error)
+    console.error('[generateObject] Error generating quiz:', error)
     return Response.json({ questions: [], error: String(error) }, { status: 500 })
   }
 }
