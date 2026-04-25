@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { X, ChevronRight, Check, AlertCircle, Lightbulb } from 'lucide-react'
+import { X, ChevronRight, Check, AlertCircle, Lightbulb, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { LaTeXRenderer } from './latex-renderer'
 import { MathBackground } from './math-background'
@@ -23,7 +23,8 @@ export function QuizEngine() {
     submitted: false,
     isCorrect: null
   })
-  const [showExplanation, setShowExplanation] = useState(false)
+  const [detailedExplanation, setDetailedExplanation] = useState<string | null>(null)
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false)
 
   const { questions, currentIndex, config } = currentQuiz
   const currentQuestion = questions[currentIndex]
@@ -41,16 +42,21 @@ export function QuizEngine() {
     const isCorrect = answerState.selected === currentQuestion.correctAnswer
     setAnswerState(prev => ({ ...prev, submitted: true, isCorrect }))
     
-    answerQuestion(
-      currentQuestion.id,
-      answerState.selected,
+    answerQuestion({
+      questionId: currentQuestion.id,
+      questionText: currentQuestion.question,
+      options: currentQuestion.options,
+      selectedAnswer: answerState.selected,
+      correctAnswer: currentQuestion.correctAnswer,
       isCorrect,
-      currentQuestion.topic
-    )
+      topic: currentQuestion.topic,
+      topicName: currentQuestion.topicName,
+      explanation: currentQuestion.explanation
+    })
   }, [answerState.selected, currentQuestion, answerQuestion])
 
   const handleNext = useCallback(() => {
-    setShowExplanation(false)
+    setDetailedExplanation(null)
     
     if (isLastQuestion) {
       finishQuiz()
@@ -60,6 +66,33 @@ export function QuizEngine() {
       setAnswerState({ selected: null, submitted: false, isCorrect: null })
     }
   }, [isLastQuestion, finishQuiz, nextQuestion, setActiveView])
+
+  const handleExplainError = useCallback(async () => {
+    if (!currentQuestion || answerState.selected === null) return
+    
+    setIsLoadingExplanation(true)
+    
+    try {
+      const response = await fetch('/api/explain-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: currentQuestion.question,
+          selectedAnswer: answerState.selected,
+          correctAnswer: currentQuestion.correctAnswer,
+          options: currentQuestion.options,
+          topic: currentQuestion.topicName
+        })
+      })
+      
+      const data = await response.json()
+      setDetailedExplanation(data.explanation)
+    } catch {
+      setDetailedExplanation('No se pudo cargar la explicacion. Intenta de nuevo.')
+    } finally {
+      setIsLoadingExplanation(false)
+    }
+  }, [currentQuestion, answerState.selected])
 
   const handleExit = useCallback(() => {
     if (confirm('Seguro que quieres salir? Perderas tu progreso actual.')) {
@@ -95,17 +128,17 @@ export function QuizEngine() {
         </div>
         <div className="px-4 pb-3">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            {config?.mode === 'teorico' ? 'Modo Teorico' : 'Modo Practico'}
+            {config?.mode === 'teorico' ? 'Modo Teorico' : 'Modo Practico'} - {currentQuestion.topicName}
           </span>
         </div>
       </header>
 
       {/* Question Content */}
-      <main className="flex-1 px-4 py-6 pb-32 overflow-y-auto">
+      <main className="flex-1 px-4 py-6 pb-36 overflow-y-auto">
         <div className="space-y-5">
           {/* Question */}
-          <Card className="p-5 border-2 border-border bg-card/90 backdrop-blur-sm shadow-lg">
-            <h2 className="text-lg font-semibold text-foreground leading-relaxed">
+          <Card className="p-6 border-2 border-border bg-card/90 backdrop-blur-sm shadow-lg">
+            <h2 className="text-xl font-bold text-foreground leading-relaxed">
               <LaTeXRenderer content={currentQuestion.question} />
             </h2>
           </Card>
@@ -125,31 +158,32 @@ export function QuizEngine() {
                   disabled={answerState.submitted}
                   className={cn(
                     'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200',
-                    'touch-manipulation active:scale-[0.98] bg-card/80 backdrop-blur-sm',
-                    !answerState.submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md',
+                    'touch-manipulation bg-card/80 backdrop-blur-sm',
+                    showIncorrect && 'animate-shake',
+                    !answerState.submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md active:scale-[0.98]',
                     !answerState.submitted && isSelected && 'border-[var(--algebra)] bg-[var(--algebra-light)] shadow-lg shadow-[var(--algebra)]/20',
-                    showCorrect && 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg shadow-[var(--analysis)]/20',
-                    showIncorrect && 'border-destructive bg-destructive/10 shadow-lg shadow-destructive/20',
-                    answerState.submitted && !showCorrect && !showIncorrect && 'border-border opacity-50'
+                    showCorrect && 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg shadow-[var(--analysis)]/20 border-4',
+                    showIncorrect && 'border-destructive bg-destructive/10 shadow-lg shadow-destructive/20 border-4',
+                    answerState.submitted && !showCorrect && !showIncorrect && 'border-border opacity-40'
                   )}
                 >
                   <div className="flex items-start gap-3">
                     <div className={cn(
-                      'w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold transition-all border-2',
+                      'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-lg font-bold transition-all border-2',
                       !answerState.submitted && !isSelected && 'bg-muted text-muted-foreground border-transparent',
                       !answerState.submitted && isSelected && 'bg-[var(--algebra)] text-white border-[var(--algebra)]',
                       showCorrect && 'bg-[var(--analysis)] text-white border-[var(--analysis)]',
                       showIncorrect && 'bg-destructive text-white border-destructive'
                     )}>
                       {answerState.submitted ? (
-                        showCorrect ? <Check className="w-5 h-5" /> :
-                        showIncorrect ? <X className="w-5 h-5" /> :
+                        showCorrect ? <Check className="w-6 h-6" strokeWidth={3} /> :
+                        showIncorrect ? <X className="w-6 h-6" strokeWidth={3} /> :
                         String.fromCharCode(65 + index)
                       ) : (
                         String.fromCharCode(65 + index)
                       )}
                     </div>
-                    <span className="flex-1 pt-2 font-medium">
+                    <span className="flex-1 pt-2.5 font-semibold text-base">
                       <LaTeXRenderer content={option} className="text-foreground" />
                     </span>
                   </div>
@@ -158,18 +192,53 @@ export function QuizEngine() {
             })}
           </div>
 
-          {/* Explanation (shown after incorrect answer) */}
-          {showExplanation && currentQuestion.explanation && (
-            <Card className="p-5 border-2 border-[var(--algebra)]/30 bg-[var(--algebra-light)]">
+          {/* Feedback after answer - correct */}
+          {answerState.submitted && answerState.isCorrect && (
+            <Card className="p-5 border-2 border-[var(--analysis)] bg-[var(--analysis-light)] animate-in fade-in-50 slide-in-from-bottom-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[var(--analysis)] flex items-center justify-center shrink-0">
+                  <Check className="w-5 h-5 text-white" strokeWidth={3} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[var(--analysis)] mb-1">Correcto!</h3>
+                  <p className="text-sm text-foreground/80 leading-relaxed">
+                    <LaTeXRenderer content={currentQuestion.explanation} />
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Feedback after answer - incorrect */}
+          {answerState.submitted && !answerState.isCorrect && (
+            <Card className="p-5 border-2 border-destructive bg-destructive/5 animate-in fade-in-50 slide-in-from-bottom-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-destructive flex items-center justify-center shrink-0">
+                  <X className="w-5 h-5 text-white" strokeWidth={3} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-destructive mb-1">Incorrecto</h3>
+                  <p className="text-sm text-foreground/80 leading-relaxed">
+                    La respuesta correcta era <strong>{String.fromCharCode(65 + currentQuestion.correctAnswer)}</strong>.{' '}
+                    <LaTeXRenderer content={currentQuestion.explanation} />
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Detailed Explanation Modal */}
+          {detailedExplanation && (
+            <Card className="p-5 border-2 border-[var(--algebra)]/30 bg-[var(--algebra-light)] animate-in fade-in-50 slide-in-from-bottom-4">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[var(--algebra)] flex items-center justify-center shrink-0">
                   <Lightbulb className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-foreground mb-2">Explicacion</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    <LaTeXRenderer content={currentQuestion.explanation} />
-                  </p>
+                  <h3 className="font-bold text-foreground mb-2">Explicacion Detallada</h3>
+                  <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
+                    <LaTeXRenderer content={detailedExplanation} />
+                  </div>
                 </div>
               </div>
             </Card>
@@ -180,14 +249,24 @@ export function QuizEngine() {
       {/* Fixed Action Button */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/95 backdrop-blur-xl border-t-2 border-border">
         <div className="flex gap-3">
-          {answerState.submitted && !answerState.isCorrect && currentQuestion.explanation && !showExplanation && (
+          {answerState.submitted && !answerState.isCorrect && !detailedExplanation && (
             <Button
               variant="outline"
-              onClick={() => setShowExplanation(true)}
+              onClick={handleExplainError}
+              disabled={isLoadingExplanation}
               className="flex-1 h-14 rounded-2xl border-2 font-bold gap-2"
             >
-              <AlertCircle className="w-5 h-5" />
-              Explicar Error
+              {isLoadingExplanation ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Cargando...
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5" />
+                  Explicar Error
+                </>
+              )}
             </Button>
           )}
           

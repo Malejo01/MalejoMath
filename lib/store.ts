@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { UserProgress, QuizConfig, QuizResult, Question, WeakPoint } from './types'
+import type { UserProgress, QuizConfig, QuizResult, Question, Answer } from './types'
 
 interface AppState {
   // User Progress
@@ -13,25 +13,30 @@ interface AppState {
     config: QuizConfig | null
     questions: Question[]
     currentIndex: number
-    answers: { questionId: string; selectedAnswer: number; isCorrect: boolean; topic: string }[]
+    answers: Answer[]
     startedAt: string | null
   }
   
   // UI State
-  activeView: 'dashboard' | 'selector' | 'quiz' | 'results'
+  activeView: 'dashboard' | 'selector' | 'quiz' | 'results' | 'loading'
   selectedSubject: string | null
+  selectedTopics: { id: string; name: string }[]
   
   // Actions
-  setActiveView: (view: 'dashboard' | 'selector' | 'quiz' | 'results') => void
+  setActiveView: (view: 'dashboard' | 'selector' | 'quiz' | 'results' | 'loading') => void
   setSelectedSubject: (subject: string | null) => void
+  toggleTopic: (topicId: string, topicName: string) => void
+  clearSelectedTopics: () => void
   startQuiz: (config: QuizConfig, questions: Question[]) => void
-  answerQuestion: (questionId: string, selectedAnswer: number, isCorrect: boolean, topic: string) => void
+  answerQuestion: (answer: Answer) => void
   nextQuestion: () => void
   finishQuiz: () => QuizResult
   updateStreak: (passed: boolean) => void
-  addWeakPoint: (topic: string, subject: string) => void
+  addWeakPoint: (topic: string, topicName: string, subject: string) => void
   removeWeakPoint: (topic: string) => void
+  addUsedQuestionIds: (ids: string[]) => void
   resetQuiz: () => void
+  getUsedQuestionIds: () => string[]
 }
 
 const initialProgress: UserProgress = {
@@ -42,7 +47,8 @@ const initialProgress: UserProgress = {
     algebra: 0,
     analisis: 0,
     probabilidad: 0
-  }
+  },
+  usedQuestionIds: []
 }
 
 export const useAppStore = create<AppState>()(
@@ -60,10 +66,24 @@ export const useAppStore = create<AppState>()(
       
       activeView: 'dashboard',
       selectedSubject: null,
+      selectedTopics: [],
       
       setActiveView: (view) => set({ activeView: view }),
       
-      setSelectedSubject: (subject) => set({ selectedSubject: subject }),
+      setSelectedSubject: (subject) => set({ 
+        selectedSubject: subject,
+        selectedTopics: []
+      }),
+      
+      toggleTopic: (topicId, topicName) => set((state) => {
+        const exists = state.selectedTopics.find(t => t.id === topicId)
+        if (exists) {
+          return { selectedTopics: state.selectedTopics.filter(t => t.id !== topicId) }
+        }
+        return { selectedTopics: [...state.selectedTopics, { id: topicId, name: topicName }] }
+      }),
+      
+      clearSelectedTopics: () => set({ selectedTopics: [] }),
       
       startQuiz: (config, questions) => set({
         currentQuiz: {
@@ -76,13 +96,10 @@ export const useAppStore = create<AppState>()(
         activeView: 'quiz'
       }),
       
-      answerQuestion: (questionId, selectedAnswer, isCorrect, topic) => set((state) => ({
+      answerQuestion: (answer) => set((state) => ({
         currentQuiz: {
           ...state.currentQuiz,
-          answers: [
-            ...state.currentQuiz.answers,
-            { questionId, selectedAnswer, isCorrect, topic }
-          ]
+          answers: [...state.currentQuiz.answers, answer]
         }
       })),
       
@@ -96,13 +113,13 @@ export const useAppStore = create<AppState>()(
       finishQuiz: () => {
         const state = get()
         const { answers, questions, config } = state.currentQuiz
-        const correct = answers.filter(a => a.isCorrect).length
+        const correctAnswers = answers.filter(a => a.isCorrect)
+        const incorrectAnswers = answers.filter(a => !a.isCorrect)
+        const correct = correctAnswers.length
         const total = questions.length
         const score = Number(((correct / total) * 10).toFixed(2))
         
-        const incorrectTopics = [...new Set(
-          answers.filter(a => !a.isCorrect).map(a => a.topic)
-        )]
+        const incorrectTopics = [...new Set(incorrectAnswers.map(a => a.topic))]
         
         // Update streak
         const passed = score >= 6
@@ -110,17 +127,22 @@ export const useAppStore = create<AppState>()(
         
         // Add weak points for incorrect answers
         if (config) {
-          answers.filter(a => !a.isCorrect).forEach(a => {
-            get().addWeakPoint(a.topic, config.subject)
+          incorrectAnswers.forEach(a => {
+            get().addWeakPoint(a.topic, a.topicName, config.subject)
           })
         }
+        
+        // Store used question IDs
+        get().addUsedQuestionIds(questions.map(q => q.id))
         
         return {
           score,
           total,
           percentage: (correct / total) * 100,
           incorrectTopics,
-          answers
+          answers,
+          correctAnswers,
+          incorrectAnswers
         }
       },
       
@@ -132,7 +154,7 @@ export const useAppStore = create<AppState>()(
         }
       })),
       
-      addWeakPoint: (topic, subject) => set((state) => {
+      addWeakPoint: (topic, topicName, subject) => set((state) => {
         const existing = state.userProgress.weakPoints.find(wp => wp.topic === topic)
         if (existing) {
           return {
@@ -147,7 +169,7 @@ export const useAppStore = create<AppState>()(
         return {
           userProgress: {
             ...state.userProgress,
-            weakPoints: [...state.userProgress.weakPoints, { topic, subject, count: 1 }]
+            weakPoints: [...state.userProgress.weakPoints, { topic, topicName, subject, count: 1 }]
           }
         }
       }),
@@ -159,6 +181,15 @@ export const useAppStore = create<AppState>()(
         }
       })),
       
+      addUsedQuestionIds: (ids) => set((state) => ({
+        userProgress: {
+          ...state.userProgress,
+          usedQuestionIds: [...new Set([...state.userProgress.usedQuestionIds, ...ids])]
+        }
+      })),
+      
+      getUsedQuestionIds: () => get().userProgress.usedQuestionIds,
+      
       resetQuiz: () => set({
         currentQuiz: {
           config: null,
@@ -167,7 +198,9 @@ export const useAppStore = create<AppState>()(
           answers: [],
           startedAt: null
         },
-        activeView: 'dashboard'
+        activeView: 'dashboard',
+        selectedSubject: null,
+        selectedTopics: []
       })
     }),
     {

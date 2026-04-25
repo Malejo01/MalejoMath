@@ -4,6 +4,7 @@ import { useAppStore } from '@/lib/store'
 import { Dashboard } from './dashboard'
 import { QuizEngine } from './quiz-engine'
 import { ResultsScreen } from './results-screen'
+import { LoadingScreen } from './loading-screen'
 
 export function MalejoMathApp() {
   const { activeView } = useAppStore()
@@ -11,6 +12,7 @@ export function MalejoMathApp() {
   return (
     <div className="max-w-lg mx-auto min-h-screen">
       {(activeView === 'dashboard' || activeView === 'selector') && <Dashboard />}
+      {activeView === 'loading' && <LoadingScreen />}
       {activeView === 'quiz' && <QuizEngine />}
       {activeView === 'results' && <ResultsScreen />}
     </div>

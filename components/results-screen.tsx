@@ -1,43 +1,37 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAppStore } from '@/lib/store'
-import { subjects } from '@/lib/data'
 import { StreakBadge } from './streak-badge'
 import { MathBackground } from './math-background'
-import { Home, RotateCcw, Target, TrendingUp, TrendingDown, Sparkles, Trophy, XCircle } from 'lucide-react'
+import { LaTeXRenderer } from './latex-renderer'
+import { Home, RotateCcw, TrendingUp, TrendingDown, Sparkles, Trophy, XCircle, CheckCircle, ChevronDown, ChevronUp, AlertCircle, Loader2, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import confetti from 'canvas-confetti'
+import type { Answer } from '@/lib/types'
 
 export function ResultsScreen() {
-  const { currentQuiz, userProgress, resetQuiz, setSelectedSubject, setActiveView } = useAppStore()
+  const { currentQuiz, userProgress, resetQuiz, setSelectedSubject, setActiveView, clearSelectedTopics, startQuiz, getUsedQuestionIds } = useAppStore()
   const { answers, questions, config } = currentQuiz
+  const [showCorrect, setShowCorrect] = useState(false)
+  const [showIncorrect, setShowIncorrect] = useState(false)
+  const [loadingExplanation, setLoadingExplanation] = useState<string | null>(null)
+  const [explanations, setExplanations] = useState<Record<string, string>>({})
+  const [isRetrying, setIsRetrying] = useState(false)
 
   const results = useMemo(() => {
-    const correct = answers.filter(a => a.isCorrect).length
+    const correctAnswers = answers.filter(a => a.isCorrect)
+    const incorrectAnswers = answers.filter(a => !a.isCorrect)
+    const correct = correctAnswers.length
     const total = questions.length
     const score = Number(((correct / total) * 10).toFixed(2))
     const percentage = (correct / total) * 100
     const passed = score >= 6
 
-    const incorrectTopics = [...new Set(
-      answers.filter(a => !a.isCorrect).map(a => a.topic)
-    )]
-
-    return { correct, total, score, percentage, passed, incorrectTopics }
+    return { correct, total, score, percentage, passed, correctAnswers, incorrectAnswers }
   }, [answers, questions])
-
-  const getTopicName = (topicId: string): string => {
-    for (const subject of subjects) {
-      for (const unit of subject.units) {
-        const topic = unit.topics.find(t => t.id === topicId)
-        if (topic) return topic.name
-      }
-    }
-    return topicId
-  }
 
   // Trigger confetti on passing
   useEffect(() => {
@@ -69,14 +63,64 @@ export function ResultsScreen() {
     }
   }, [results.passed])
 
-  const handleRetry = () => {
-    if (config) {
-      setSelectedSubject(config.subject)
-      setActiveView('selector')
+  const handleExplainError = useCallback(async (answer: Answer) => {
+    if (explanations[answer.questionId]) return
+    
+    setLoadingExplanation(answer.questionId)
+    
+    try {
+      const response = await fetch('/api/explain-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: answer.questionText,
+          selectedAnswer: answer.selectedAnswer,
+          correctAnswer: answer.correctAnswer,
+          options: answer.options,
+          topic: answer.topicName
+        })
+      })
+      
+      const data = await response.json()
+      setExplanations(prev => ({ ...prev, [answer.questionId]: data.explanation }))
+    } catch {
+      setExplanations(prev => ({ ...prev, [answer.questionId]: 'No se pudo cargar la explicacion.' }))
+    } finally {
+      setLoadingExplanation(null)
     }
-  }
+  }, [explanations])
+
+  const handleRetry = useCallback(async () => {
+    if (!config) return
+    
+    setIsRetrying(true)
+    
+    try {
+      const response = await fetch('/api/generate-quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: config.subjectName,
+          topics: config.topics,
+          mode: config.mode,
+          previousQuestionIds: getUsedQuestionIds()
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.questions && data.questions.length > 0) {
+        startQuiz(config, data.questions)
+      }
+    } catch {
+      // Handle error silently
+    } finally {
+      setIsRetrying(false)
+    }
+  }, [config, getUsedQuestionIds, startQuiz])
 
   const handleGoHome = () => {
+    clearSelectedTopics()
     resetQuiz()
   }
 
@@ -92,7 +136,7 @@ export function ResultsScreen() {
             ? 'bg-[var(--analysis-light)] text-[var(--analysis)]' 
             : 'bg-orange-100 text-orange-600'
         )}>
-          {results.passed ? <Trophy className="w-5 h-5" /> : <Target className="w-5 h-5" />}
+          {results.passed ? <Trophy className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
           <span className="font-bold text-sm">
             {results.passed ? 'Aprobado' : 'A seguir practicando'}
           </span>
@@ -106,7 +150,7 @@ export function ResultsScreen() {
       </header>
 
       {/* Main Content */}
-      <main className="px-4 pb-32 space-y-5 relative z-10">
+      <main className="px-4 pb-36 space-y-5 relative z-10">
         {/* Score Card */}
         <Card className={cn(
           'p-6 text-center border-2 overflow-hidden relative',
@@ -114,7 +158,6 @@ export function ResultsScreen() {
             ? 'border-[var(--analysis)]/30 bg-gradient-to-br from-[var(--analysis-light)] to-white' 
             : 'border-orange-200 bg-gradient-to-br from-orange-50 to-white'
         )}>
-          {/* Decorative sparkles */}
           {results.passed && (
             <>
               <Sparkles className="absolute top-4 left-4 w-6 h-6 text-[var(--analysis)]/40" />
@@ -123,7 +166,6 @@ export function ResultsScreen() {
           )}
           
           <div className="relative">
-            {/* Score Circle */}
             <div className={cn(
               'w-36 h-36 mx-auto rounded-3xl flex items-center justify-center',
               'border-4 shadow-xl',
@@ -142,7 +184,6 @@ export function ResultsScreen() {
               </div>
             </div>
 
-            {/* Trend Badge */}
             <div className={cn(
               'absolute -top-2 right-1/4 w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg',
               results.passed 
@@ -186,49 +227,159 @@ export function ResultsScreen() {
 
         {/* Stats Summary */}
         <div className="grid grid-cols-2 gap-3">
-          <Card className="p-4 border-2 border-[var(--analysis)]/30 bg-[var(--analysis-light)]">
+          <Card 
+            className={cn(
+              'p-4 border-2 cursor-pointer transition-all',
+              showCorrect 
+                ? 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg' 
+                : 'border-[var(--analysis)]/30 bg-[var(--analysis-light)]/50 hover:bg-[var(--analysis-light)]'
+            )}
+            onClick={() => { setShowCorrect(!showCorrect); setShowIncorrect(false) }}
+          >
             <div className="flex flex-col items-center text-center">
               <div className="w-12 h-12 rounded-2xl bg-[var(--analysis)] flex items-center justify-center mb-2">
-                <TrendingUp className="w-6 h-6 text-white" />
+                <CheckCircle className="w-6 h-6 text-white" />
               </div>
               <span className="text-3xl font-black text-[var(--analysis)]">{results.correct}</span>
               <span className="text-xs text-muted-foreground font-bold uppercase tracking-wide mt-1">Correctas</span>
+              <div className="flex items-center gap-1 mt-2 text-[var(--analysis)]">
+                <span className="text-xs font-semibold">Ver</span>
+                {showCorrect ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
             </div>
           </Card>
-          <Card className="p-4 border-2 border-destructive/30 bg-destructive/5">
+          <Card 
+            className={cn(
+              'p-4 border-2 cursor-pointer transition-all',
+              showIncorrect 
+                ? 'border-destructive bg-destructive/10 shadow-lg' 
+                : 'border-destructive/30 bg-destructive/5 hover:bg-destructive/10'
+            )}
+            onClick={() => { setShowIncorrect(!showIncorrect); setShowCorrect(false) }}
+          >
             <div className="flex flex-col items-center text-center">
               <div className="w-12 h-12 rounded-2xl bg-destructive flex items-center justify-center mb-2">
                 <XCircle className="w-6 h-6 text-white" />
               </div>
               <span className="text-3xl font-black text-destructive">{results.total - results.correct}</span>
               <span className="text-xs text-muted-foreground font-bold uppercase tracking-wide mt-1">Incorrectas</span>
+              <div className="flex items-center gap-1 mt-2 text-destructive">
+                <span className="text-xs font-semibold">Ver</span>
+                {showIncorrect ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
             </div>
           </Card>
         </div>
 
-        {/* Incorrect Topics */}
-        {results.incorrectTopics.length > 0 && (
-          <Card className="p-5 border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-white">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center">
-                <Target className="w-5 h-5 text-white" />
-              </div>
-              <h3 className="font-bold text-foreground">Temas para repasar</h3>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {results.incorrectTopics.map((topic) => (
-                <span
-                  key={topic}
-                  className="px-3 py-2 bg-white border-2 border-orange-200 text-foreground rounded-xl text-sm font-semibold shadow-sm"
-                >
-                  {getTopicName(topic)}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-3 font-medium">
-              Estos temas se han agregado a tu seccion de refuerzo
-            </p>
-          </Card>
+        {/* Correct Answers List */}
+        {showCorrect && results.correctAnswers.length > 0 && (
+          <div className="space-y-3 animate-in fade-in-50 slide-in-from-top-4">
+            <h3 className="font-bold text-foreground flex items-center gap-2 px-1">
+              <CheckCircle className="w-5 h-5 text-[var(--analysis)]" />
+              Respuestas Correctas
+            </h3>
+            {results.correctAnswers.map((answer, i) => (
+              <Card key={answer.questionId} className="p-4 border-2 border-[var(--analysis)]/30 bg-[var(--analysis-light)]">
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-[var(--analysis)] text-white text-xs font-bold flex items-center justify-center shrink-0">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        <LaTeXRenderer content={answer.questionText} />
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Tema: {answer.topicName}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="ml-8 p-2 bg-white rounded-lg border border-[var(--analysis)]/20">
+                    <p className="text-sm text-[var(--analysis)] font-semibold">
+                      {String.fromCharCode(65 + answer.correctAnswer)}) <LaTeXRenderer content={answer.options[answer.correctAnswer]} />
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Incorrect Answers List */}
+        {showIncorrect && results.incorrectAnswers.length > 0 && (
+          <div className="space-y-3 animate-in fade-in-50 slide-in-from-top-4">
+            <h3 className="font-bold text-foreground flex items-center gap-2 px-1">
+              <XCircle className="w-5 h-5 text-destructive" />
+              Respuestas Incorrectas
+            </h3>
+            {results.incorrectAnswers.map((answer, i) => (
+              <Card key={answer.questionId} className="p-4 border-2 border-destructive/30 bg-destructive/5">
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-destructive text-white text-xs font-bold flex items-center justify-center shrink-0">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        <LaTeXRenderer content={answer.questionText} />
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Tema: {answer.topicName}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="ml-8 space-y-2">
+                    <div className="p-2 bg-destructive/10 rounded-lg border border-destructive/20">
+                      <p className="text-sm text-destructive font-semibold">
+                        Tu respuesta: {String.fromCharCode(65 + answer.selectedAnswer)}) <LaTeXRenderer content={answer.options[answer.selectedAnswer]} />
+                      </p>
+                    </div>
+                    <div className="p-2 bg-[var(--analysis-light)] rounded-lg border border-[var(--analysis)]/20">
+                      <p className="text-sm text-[var(--analysis)] font-semibold">
+                        Correcta: {String.fromCharCode(65 + answer.correctAnswer)}) <LaTeXRenderer content={answer.options[answer.correctAnswer]} />
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Explanation */}
+                  {explanations[answer.questionId] && (
+                    <Card className="ml-8 p-4 border-2 border-[var(--algebra)]/30 bg-[var(--algebra-light)]">
+                      <div className="flex items-start gap-2">
+                        <Lightbulb className="w-5 h-5 text-[var(--algebra)] shrink-0 mt-0.5" />
+                        <div className="text-sm text-foreground/80 whitespace-pre-wrap">
+                          <LaTeXRenderer content={explanations[answer.questionId]} />
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Explain Error Button */}
+                  {!explanations[answer.questionId] && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleExplainError(answer)}
+                      disabled={loadingExplanation === answer.questionId}
+                      className="ml-8 gap-2 border-2"
+                    >
+                      {loadingExplanation === answer.questionId ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Cargando...
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-4 h-4" />
+                          Explicar Error
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
         )}
       </main>
 
@@ -238,10 +389,20 @@ export function ResultsScreen() {
           <Button
             variant="outline"
             onClick={handleRetry}
+            disabled={isRetrying}
             className="flex-1 h-14 gap-2 rounded-2xl border-2 font-bold"
           >
-            <RotateCcw className="w-5 h-5" />
-            Reintentar
+            {isRetrying ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Generando...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-5 h-5" />
+                Reintentar
+              </>
+            )}
           </Button>
           <Button
             onClick={handleGoHome}
@@ -252,7 +413,7 @@ export function ResultsScreen() {
             )}
           >
             <Home className="w-5 h-5" />
-            Inicio
+            Continuar
           </Button>
         </div>
       </div>

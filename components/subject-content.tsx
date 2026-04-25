@@ -3,14 +3,11 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
-import { Play, BookOpen, Calculator, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { BookOpen, Calculator, ChevronDown, ChevronUp, Sparkles, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Subject } from '@/lib/types'
 import { useAppStore } from '@/lib/store'
-import { getQuestionsForTopics } from '@/lib/data'
 
 interface SubjectContentProps {
   subject: Subject
@@ -26,7 +23,6 @@ const colorConfig = {
     gradient: 'from-[var(--algebra)] to-[var(--algebra)]/80',
     shadow: 'shadow-[var(--algebra)]/20',
     progress: '[&>div]:bg-[var(--algebra)]',
-    checkbox: 'data-[state=checked]:bg-[var(--algebra)] data-[state=checked]:border-[var(--algebra)]'
   },
   analisis: {
     bg: 'bg-[var(--analysis)]',
@@ -37,7 +33,6 @@ const colorConfig = {
     gradient: 'from-[var(--analysis)] to-[var(--analysis)]/80',
     shadow: 'shadow-[var(--analysis)]/20',
     progress: '[&>div]:bg-[var(--analysis)]',
-    checkbox: 'data-[state=checked]:bg-[var(--analysis)] data-[state=checked]:border-[var(--analysis)]'
   },
   probabilidad: {
     bg: 'bg-[var(--probability)]',
@@ -48,15 +43,13 @@ const colorConfig = {
     gradient: 'from-[var(--probability)] to-[var(--probability)]/80',
     shadow: 'shadow-[var(--probability)]/20',
     progress: '[&>div]:bg-[var(--probability)]',
-    checkbox: 'data-[state=checked]:bg-[var(--probability)] data-[state=checked]:border-[var(--probability)]'
   }
 }
 
 export function SubjectContent({ subject }: SubjectContentProps) {
-  const { startQuiz } = useAppStore()
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([])
-  const [mode, setMode] = useState<'teorico' | 'practico'>('teorico')
+  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds } = useAppStore()
   const [expandedUnits, setExpandedUnits] = useState<string[]>([subject.units[0]?.id || ''])
+  const [isLoading, setIsLoading] = useState(false)
   
   const colors = colorConfig[subject.id as keyof typeof colorConfig] || colorConfig.algebra
 
@@ -67,14 +60,6 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   )
   const progressPercentage = totalTopics > 0 ? (completedTopics / totalTopics) * 100 : 0
 
-  const handleTopicToggle = (topicId: string) => {
-    setSelectedTopics(prev =>
-      prev.includes(topicId)
-        ? prev.filter(id => id !== topicId)
-        : [...prev, topicId]
-    )
-  }
-
   const toggleUnit = (unitId: string) => {
     setExpandedUnits(prev =>
       prev.includes(unitId)
@@ -84,27 +69,57 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   }
 
   const handleSelectAll = () => {
-    const allTopicIds = subject.units.flatMap(u => u.topics.map(t => t.id))
-    if (selectedTopics.length === allTopicIds.length) {
-      setSelectedTopics([])
+    const allTopics = subject.units.flatMap(u => u.topics.map(t => ({ id: t.id, name: t.name })))
+    if (selectedTopics.length === allTopics.length) {
+      allTopics.forEach(t => toggleTopic(t.id, t.name))
     } else {
-      setSelectedTopics(allTopicIds)
+      allTopics.forEach(t => {
+        if (!selectedTopics.find(st => st.id === t.id)) {
+          toggleTopic(t.id, t.name)
+        }
+      })
     }
   }
 
-  const handleStartQuiz = () => {
+  const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
     if (selectedTopics.length === 0) return
     
-    const questions = getQuestionsForTopics(selectedTopics, mode)
-    startQuiz(
-      {
-        subject: subject.id,
-        topics: selectedTopics,
-        mode,
-        questionCount: mode === 'teorico' ? 20 : 10
-      },
-      questions
-    )
+    setIsLoading(true)
+    setActiveView('loading')
+    
+    try {
+      const response = await fetch('/api/generate-quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: subject.name,
+          topics: selectedTopics,
+          mode,
+          previousQuestionIds: getUsedQuestionIds()
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.questions && data.questions.length > 0) {
+        startQuiz(
+          {
+            subject: subject.id,
+            subjectName: subject.name,
+            topics: selectedTopics,
+            mode,
+            questionCount: mode === 'teorico' ? 20 : 10
+          },
+          data.questions
+        )
+      } else {
+        setActiveView('dashboard')
+      }
+    } catch {
+      setActiveView('dashboard')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const allTopicsCount = subject.units.reduce((acc, u) => acc + u.topics.length, 0)
@@ -132,54 +147,11 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         </div>
       </Card>
 
-      {/* Mode Selector */}
-      <Card className="p-4 border-2 border-border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              'w-11 h-11 rounded-xl flex items-center justify-center transition-all',
-              mode === 'teorico' 
-                ? cn(colors.bg, 'text-white shadow-lg', colors.shadow)
-                : 'bg-muted text-muted-foreground'
-            )}>
-              {mode === 'teorico' ? <BookOpen className="w-5 h-5" /> : <Calculator className="w-5 h-5" />}
-            </div>
-            <div>
-              <div className="font-bold text-foreground">
-                {mode === 'teorico' ? 'Modo Teorico' : 'Modo Practico'}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {mode === 'teorico' ? '20 preguntas conceptuales' : '10 ejercicios para resolver'}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              'text-xs font-bold px-2 py-1 rounded-full transition-colors',
-              mode === 'teorico' ? cn(colors.bgLight, colors.text) : 'text-muted-foreground'
-            )}>
-              T
-            </span>
-            <Switch
-              checked={mode === 'practico'}
-              onCheckedChange={(checked) => setMode(checked ? 'practico' : 'teorico')}
-              className={cn('[&[data-state=checked]]:bg-[var(--analysis)]')}
-            />
-            <span className={cn(
-              'text-xs font-bold px-2 py-1 rounded-full transition-colors',
-              mode === 'practico' ? 'bg-[var(--analysis-light)] text-[var(--analysis)]' : 'text-muted-foreground'
-            )}>
-              P
-            </span>
-          </div>
-        </div>
-      </Card>
-
       {/* Select All Header */}
       <div className="flex items-center justify-between px-1">
         <h3 className="font-bold text-foreground flex items-center gap-2">
           <Sparkles className={cn('w-4 h-4', colors.text)} />
-          Selecciona temas
+          Selecciona temas ({selectedTopics.length})
         </h3>
         <Button
           variant="ghost"
@@ -196,7 +168,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         {subject.units.map((unit) => {
           const isExpanded = expandedUnits.includes(unit.id)
           const unitTopicIds = unit.topics.map(t => t.id)
-          const selectedInUnit = selectedTopics.filter(id => unitTopicIds.includes(id)).length
+          const selectedInUnit = selectedTopics.filter(t => unitTopicIds.includes(t.id)).length
 
           return (
             <Card 
@@ -230,30 +202,41 @@ export function SubjectContent({ subject }: SubjectContentProps) {
               
               {isExpanded && (
                 <div className="border-t border-border px-2 py-2 bg-muted/30">
-                  {unit.topics.map((topic) => (
-                    <label
-                      key={topic.id}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer transition-all',
-                        'hover:bg-white active:scale-[0.98]',
-                        selectedTopics.includes(topic.id) && cn(colors.bgLight, 'border', colors.borderLight)
-                      )}
-                    >
-                      <Checkbox
-                        checked={selectedTopics.includes(topic.id)}
-                        onCheckedChange={() => handleTopicToggle(topic.id)}
-                        className={colors.checkbox}
-                      />
-                      <span className="text-foreground flex-1 font-medium text-sm">
-                        {topic.name}
-                      </span>
-                      {topic.completed && (
-                        <span className="text-xs bg-[var(--analysis)] text-white px-2 py-0.5 rounded-full font-semibold">
-                          Hecho
+                  {unit.topics.map((topic) => {
+                    const isSelected = selectedTopics.some(t => t.id === topic.id)
+                    
+                    return (
+                      <button
+                        key={topic.id}
+                        onClick={() => toggleTopic(topic.id, topic.name)}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer transition-all',
+                          'hover:bg-white active:scale-[0.98]',
+                          isSelected && 'bg-[var(--analysis-light)] border-2 border-foreground'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all',
+                          isSelected 
+                            ? 'bg-foreground border-foreground' 
+                            : 'border-muted-foreground/50 bg-white'
+                        )}>
+                          {isSelected && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
+                        </div>
+                        <span className={cn(
+                          'flex-1 font-medium text-sm text-left',
+                          isSelected ? 'text-foreground' : 'text-muted-foreground'
+                        )}>
+                          {topic.name}
                         </span>
-                      )}
-                    </label>
-                  ))}
+                        {topic.completed && (
+                          <span className="text-xs bg-[var(--analysis)] text-white px-2 py-0.5 rounded-full font-semibold">
+                            Hecho
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </Card>
@@ -261,25 +244,42 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         })}
       </div>
 
-      {/* Start Quiz Button */}
-      <div className="sticky bottom-4 pt-2">
-        <Button
-          onClick={handleStartQuiz}
-          disabled={selectedTopics.length === 0}
-          className={cn(
-            'w-full h-14 text-lg font-bold gap-2 rounded-2xl shadow-xl transition-all',
-            'bg-gradient-to-r text-white border-0',
-            colors.gradient,
-            colors.shadow,
-            'disabled:opacity-50 disabled:shadow-none',
-            'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
-          )}
-          size="lg"
-        >
-          <Play className="w-5 h-5" />
-          Comenzar ({selectedTopics.length} {selectedTopics.length === 1 ? 'tema' : 'temas'})
-        </Button>
-      </div>
+      {/* Start Quiz Buttons */}
+      {selectedTopics.length > 0 && (
+        <div className="sticky bottom-4 pt-2 space-y-3">
+          <Button
+            onClick={() => handleStartQuiz('teorico')}
+            disabled={isLoading}
+            className={cn(
+              'w-full h-14 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
+              'bg-gradient-to-r from-[var(--algebra)] to-[var(--algebra)]/80 text-white border-0',
+              'shadow-[var(--algebra)]/20',
+              'disabled:opacity-50 disabled:shadow-none',
+              'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
+            )}
+            size="lg"
+          >
+            <BookOpen className="w-5 h-5" />
+            Empezar Cuestionario Teorico
+          </Button>
+          
+          <Button
+            onClick={() => handleStartQuiz('practico')}
+            disabled={isLoading}
+            className={cn(
+              'w-full h-14 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
+              'bg-gradient-to-r from-[var(--analysis)] to-[var(--analysis)]/80 text-white border-0',
+              'shadow-[var(--analysis)]/20',
+              'disabled:opacity-50 disabled:shadow-none',
+              'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
+            )}
+            size="lg"
+          >
+            <Calculator className="w-5 h-5" />
+            Empezar Cuestionario Practico
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
