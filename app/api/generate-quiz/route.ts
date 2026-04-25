@@ -144,64 +144,89 @@ Responde SOLO con el JSON, sin texto adicional.`,
 
     console.log('[v0] Raw response length:', text?.length || 0)
     
+    // Funcion para sanitizar JSON con LaTeX
+    function sanitizeJsonWithLatex(jsonStr: string): string {
+      let result = jsonStr
+      
+      // Remover code blocks de markdown
+      result = result.replace(/```json\s*/gi, '').replace(/```\s*/g, '')
+      result = result.trim()
+      
+      // Escapar backslashes dentro de strings JSON para LaTeX
+      // Esto maneja \frac, \sqrt, \int, etc que no son escapes JSON validos
+      const latexEscapes = ['frac', 'sqrt', 'int', 'sum', 'prod', 'lim', 'infty', 'alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'pi', 'sigma', 'omega', 'cdot', 'times', 'div', 'pm', 'mp', 'leq', 'geq', 'neq', 'approx', 'equiv', 'subset', 'supset', 'cup', 'cap', 'in', 'notin', 'forall', 'exists', 'neg', 'land', 'lor', 'to', 'rightarrow', 'leftarrow', 'Rightarrow', 'Leftarrow', 'partial', 'nabla', 'sin', 'cos', 'tan', 'log', 'ln', 'exp', 'binom', 'text', 'mathbb', 'mathbf', 'mathrm', 'left', 'right', 'begin', 'end']
+      
+      for (const cmd of latexEscapes) {
+        // Reemplazar \cmd con \\cmd (escapar el backslash)
+        const regex = new RegExp(`\\\\${cmd}(?![a-zA-Z])`, 'g')
+        result = result.replace(regex, `\\\\${cmd}`)
+      }
+      
+      // Manejar escapes JSON especiales que podrian confundirse
+      // \n, \t, \r, \f, \b dentro de strings LaTeX
+      result = result.replace(/\\n(?![a-zA-Z])/g, (match, offset) => {
+        // Verificar si estamos dentro de un string JSON (despues de : ")
+        const before = result.substring(Math.max(0, offset - 20), offset)
+        if (before.includes('"') && !before.includes('correctAnswer')) {
+          return '\\\\n'
+        }
+        return match
+      })
+      
+      return result
+    }
+    
     // Parsear el JSON de la respuesta
     let questions = []
     try {
-      // Limpiar la respuesta - puede venir con markdown code blocks
-      let jsonText = text || ''
-      
-      // Remover code blocks si existen
-      if (jsonText.includes('```json')) {
-        jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '')
-      } else if (jsonText.includes('```')) {
-        jsonText = jsonText.replace(/```\n?/g, '')
-      }
-      
-      jsonText = jsonText.trim()
-      
-      // Sanitizar caracteres de escape problematicos en LaTeX
-      // Gemini a veces genera \frac como escape sequence invalido
-      jsonText = jsonText
-        .replace(/\\f(?!alse)/g, '\\\\f')  // \f -> \\f (except \false)
-        .replace(/\\n(?!ull)/g, '\\\\n')   // \n -> \\n (except \null) pero solo fuera de strings reales
-        .replace(/\\t(?!rue)/g, '\\\\t')   // \t -> \\t (except \true)
-        .replace(/\\r/g, '\\\\r')          // \r -> \\r
-        .replace(/\\b(?!ase)/g, '\\\\b')   // \b -> \\b (except \base)
-      
+      const jsonText = sanitizeJsonWithLatex(text || '')
       const parsed = JSON.parse(jsonText)
       questions = parsed.questions || []
       console.log('[v0] Parsed questions:', questions.length)
     } catch (parseError) {
       console.error('[v0] JSON parse error:', parseError)
-      console.error('[v0] Raw text:', text?.substring(0, 500))
       
-      // Intento alternativo: extraer preguntas manualmente con regex
+      // Intento alternativo: usar eval con JSON5-like parsing
       try {
-        const questionsMatch = text?.match(/"questions"\s*:\s*\[([\s\S]*)\]/)?.[1]
-        if (questionsMatch) {
-          // Intentar parsear objeto por objeto
-          const objectMatches = questionsMatch.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)
-          if (objectMatches) {
-            questions = objectMatches.map((obj, index) => {
-              try {
-                return JSON.parse(obj.replace(/\\f/g, '\\\\f').replace(/\\n/g, '\\\\n'))
-              } catch {
-                return {
-                  id: `q${index + 1}`,
-                  topic: 'general',
-                  topicName: 'General',
-                  question: 'Error al parsear pregunta',
-                  options: ['A', 'B', 'C', 'D'],
-                  correctAnswer: 0,
-                  explanation: 'Error de formato'
-                }
+        let cleanText = text || ''
+        cleanText = cleanText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        
+        // Extraer el array de questions usando un enfoque mas simple
+        const startIdx = cleanText.indexOf('"questions"')
+        if (startIdx !== -1) {
+          const arrayStart = cleanText.indexOf('[', startIdx)
+          if (arrayStart !== -1) {
+            let depth = 0
+            let arrayEnd = arrayStart
+            for (let i = arrayStart; i < cleanText.length; i++) {
+              if (cleanText[i] === '[') depth++
+              if (cleanText[i] === ']') depth--
+              if (depth === 0) {
+                arrayEnd = i
+                break
               }
-            }).filter(q => q.question !== 'Error al parsear pregunta')
-            console.log('[v0] Recovered questions via regex:', questions.length)
+            }
+            
+            const questionsArray = cleanText.substring(arrayStart, arrayEnd + 1)
+            // Sanitizar y parsear
+            const sanitized = sanitizeJsonWithLatex(questionsArray)
+            questions = JSON.parse(sanitized)
+            console.log('[v0] Recovered questions via extraction:', questions.length)
           }
         }
-      } catch (regexError) {
-        console.error('[v0] Regex recovery failed:', regexError)
+      } catch (recoveryError) {
+        console.error('[v0] Recovery failed:', recoveryError)
+        
+        // Ultimo recurso: generar preguntas de fallback
+        questions = [{
+          id: 'fallback-1',
+          topic: 'general',
+          topicName: 'General',
+          question: 'Error al generar preguntas. Por favor, intenta nuevamente.',
+          options: ['Reintentar', 'Volver al inicio', 'Contactar soporte', 'Reportar error'],
+          correctAnswer: 0,
+          explanation: 'Hubo un problema de comunicacion con el servidor de IA.'
+        }]
       }
     }
     
