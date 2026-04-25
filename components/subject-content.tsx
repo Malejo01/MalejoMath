@@ -93,12 +93,6 @@ const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
       setIsLoading(false)
     }
   }
-    } catch {
-      setActiveView('dashboard')
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   return (
     <div className="space-y-5 animate-in fade-in-50 slide-in-from-bottom-4 duration-300">
