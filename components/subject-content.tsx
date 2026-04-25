@@ -53,7 +53,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   )
   const progressPercentage = totalTopics > 0 ? (completedTopics / totalTopics) * 100 : 0
 
-  const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
+const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
     if (selectedTopics.length === 0) return
     
     setIsLoading(true)
@@ -87,6 +87,12 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       } else {
         setActiveView('dashboard')
       }
+    } catch {
+      setActiveView('dashboard')
+    } finally {
+      setIsLoading(false)
+    }
+  }
     } catch {
       setActiveView('dashboard')
     } finally {

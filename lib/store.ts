@@ -70,10 +70,18 @@ export const useAppStore = create<AppState>()(
       
       setActiveView: (view) => set({ activeView: view }),
       
-      setSelectedSubject: (subject) => set({ 
-        selectedSubject: subject,
-        selectedTopics: []
-      }),
+      setSelectedSubject: (subject) => {
+        const state = get()
+        // Only clear topics if changing to a different subject
+        if (state.selectedSubject !== subject) {
+          set({ 
+            selectedSubject: subject,
+            selectedTopics: []
+          })
+        } else {
+          set({ selectedSubject: subject })
+        }
+      },
       
       toggleTopic: (topicId, topicName) => set((state) => {
         const exists = state.selectedTopics.find(t => t.id === topicId)

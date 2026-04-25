@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
 import { subjects } from '@/lib/data'
 import { SubjectTabs } from './subject-tabs'
@@ -10,11 +10,20 @@ import { WeakPointsSection } from './weak-points-section'
 import { MathBackground } from './math-background'
 import { Card } from '@/components/ui/card'
 import { GraduationCap, Target, Flame, TrendingUp } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 export function Dashboard() {
-  const { userProgress } = useAppStore()
-  const [activeSubject, setActiveSubject] = useState<string | null>(subjects[0]?.id || null)
+  const { userProgress, clearSelectedTopics, setSelectedSubject } = useAppStore()
+  const [activeSubject, setActiveSubject] = useState<string | null>(null)
+  
+  // Clear selected topics when dashboard mounts (fresh start)
+  useEffect(() => {
+    clearSelectedTopics()
+  }, [clearSelectedTopics])
+  
+  const handleSubjectChange = (subjectId: string | null) => {
+    setActiveSubject(subjectId)
+    setSelectedSubject(subjectId)
+  }
 
   const selectedSubject = subjects.find(s => s.id === activeSubject)
   
@@ -85,7 +94,7 @@ export function Dashboard() {
           <SubjectTabs 
             subjects={subjects} 
             activeSubject={activeSubject}
-            onSelect={setActiveSubject}
+            onSelect={handleSubjectChange}
           />
         </section>
 
