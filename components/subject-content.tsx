@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -53,7 +52,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   )
   const progressPercentage = totalTopics > 0 ? (completedTopics / totalTopics) * 100 : 0
 
-const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
+  const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
     if (selectedTopics.length === 0) return
     
     setIsLoading(true)
@@ -85,9 +84,11 @@ const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
           data.questions
         )
       } else {
+        console.error('No questions received:', data.error)
         setActiveView('dashboard')
       }
-    } catch {
+    } catch (error) {
+      console.error('Quiz generation error:', error)
       setActiveView('dashboard')
     } finally {
       setIsLoading(false)

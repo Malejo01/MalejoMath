@@ -37,6 +37,7 @@ interface AppState {
   addUsedQuestionIds: (ids: string[]) => void
   resetQuiz: () => void
   getUsedQuestionIds: () => string[]
+  updateQuestions: (questions: Question[]) => void
 }
 
 const initialProgress: UserProgress = {
@@ -209,10 +210,20 @@ export const useAppStore = create<AppState>()(
         activeView: 'dashboard',
         selectedSubject: null,
         selectedTopics: []
-      })
+      }),
+      
+      updateQuestions: (questions) => set((state) => ({
+        currentQuiz: {
+          ...state.currentQuiz,
+          questions
+        }
+      }))
     }),
     {
-      name: 'malejo-math-storage'
+      name: 'malejo-math-storage',
+      partialize: (state) => ({ 
+        userProgress: state.userProgress 
+      }), // Solo persistir el progreso del usuario, NO el quiz actual
     }
   )
 )

@@ -121,62 +121,41 @@ export async function POST(req: Request) {
 
   try {
     const { object } = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: google('gemini-2.5-flash'), // Volvemos al modelo compatible con tu API
       schema: quizSchema,
-      system: `Eres un generador de exámenes universitarios de matemáticas. Devuelves preguntas de opción múltiple en formato JSON puro.
+      system: `Eres un experto generador de exámenes matemáticos universitarios. 
+Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
 
-REGLAS DE ORO PARA LaTeX:
-- Usa delimitadores $...$ para TODO el contenido matemático.
-- OBLIGATORIO: Usa DOBLE backslash (\\\\) en todos los comandos LaTeX.
-- Ejemplo: "$\\\\frac{x^2}{\\\\sqrt{y}}$"
+REGLAS DE ORO PARA MATEMÁTICAS (LaTeX):
+- Usa símbolos matemáticos estándar: ^ para potencias, \wedge para conjunción (y), \vee para disyunción (o).
+- TODO el contenido matemático (variables p, q, x, fórmulas, símbolos) debe ir OBLIGATORIAMENTE entre símbolos $.
+- Ejemplo: "$p \wedge q$", "$x^2$", "$\frac{a}{b}$".
+- EVITA comandos de texto como \textasciicircum. Usa el símbolo directo o el comando matemático.
+- No incluyas texto explicativo fuera del JSON.`,
+      prompt: `Genera ${questionCount} preguntas de opción múltiple de nivel universitario para la materia ${subject}.
 
-EJEMPLO DE FORMATO REQUERIDO:
-{
-  "questions": [
-    {
-      "id": "q1",
-      "topic": "gauss",
-      "topicName": "Método de Gauss",
-      "question": "¿Cuál es el valor de $\\\\alpha$?",
-      "options": ["Opción 1", "Opción 2", "Opción 3", "Opción 4"],
-      "correctAnswer": 0,
-      "explanation": "Porque $\\\\alpha$ es constante."
-    }
-  ]
-}`,
-      prompt: `Genera ${questionCount} preguntas de opción múltiple para un examen universitario de ${subject}.
-
-CURRICULUM:
+CURRICULUM DE REFERENCIA:
 ${curriculum}
 
-CONTEXTO:
+MODO DE EXAMEN:
 ${modeDescription}
 
-TEMAS A EVALUAR: 
+TEMAS ESPECÍFICOS A CUBRIR: 
 ${topicsText}
 
+REQUISITOS ADICIONALES:
 ${previousNote}
-
-REQUISITOS:
-- Cada pregunta debe tener entre 4 y 6 opciones.
-- 'correctAnswer' es el índice numérico (0, 1, 2...).
-- Usa el curriculum para asegurar que el nivel es universitario.
-- Distribuye las preguntas equitativamente entre los temas proporcionados.`,
+- 4-6 opciones por pregunta.
+- 'correctAnswer' es el índice 0-based.
+- La explicación debe ser clara y detallada.`,
       maxOutputTokens: 8000,
-      temperature: 0.7,
+      temperature: 0.5, // Menor temperatura para mas consistencia en el formato
     })
 
-    console.log('[generateObject] Success! Parsed questions:', object.questions.length)
-
+    console.log('[generateObject] Success! Questions:', object.questions.length)
     return Response.json({ questions: object.questions })
   } catch (error: any) {
-    console.error('[generateObject] DETAILED ERROR:', {
-      message: error.message,
-      name: error.name,
-      cause: error.cause,
-      stack: error.stack,
-      data: error.data // Algunos proveedores incluyen datos extras aqui
-    })
+    console.error('[generateObject] ERROR:', error.message)
     return Response.json({ 
       questions: [], 
       error: error.message || 'Error interno al generar el quiz'

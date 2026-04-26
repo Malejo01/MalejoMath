@@ -15,8 +15,9 @@ export function LaTeXRenderer({ content, className = '' }: LaTeXRendererProps) {
     const parts: (string | { type: 'latex'; content: string })[] = []
     let lastIndex = 0
     
-    // Match both $...$ (inline) and $$...$$ (display)
-    const regex = /\$\$([\s\S]*?)\$\$|\$((?:[^$\\]|\\.)+?)\$/g
+    // Match both $$...$$ (display) and $...$ (inline)
+    // Usamos un regex mas permisivo para inline math
+    const regex = /\$\$([\s\S]*?)\$\$|\$((?:\\[$]|[^$])+?)\$/g
     let match
     
     while ((match = regex.exec(content)) !== null) {
