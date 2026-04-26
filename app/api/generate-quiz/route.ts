@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateObject, type RepairTextFunction } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 
@@ -97,10 +97,29 @@ Unidad IV: Inferencia Estadística
 - Regresión lineal, Correlación
 `
 
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+const repairQuizJson: RepairTextFunction = async ({ text }) => {
+  const withoutFences = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
+  const match = withoutFences.match(/\{[\s\S]*\}/)
+  if (!match) return null
+
+  const candidate = match[0].replace(/,\s*([}\]])/g, '$1')
+  const escaped = candidate.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+
+  return escaped
+}
+
 export async function POST(req: Request) {
   const { subject, topics, mode, previousQuestionIds } = await req.json()
 
-  const questionCount = mode === 'teorico' ? 20 : 10
+  const questionCount = 10
   const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
 
   // Seleccionar el curriculum apropiado
@@ -123,14 +142,24 @@ export async function POST(req: Request) {
     const { object } = await generateObject({
       model: google('gemini-2.5-flash'), // Volvemos al modelo compatible con tu API
       schema: quizSchema,
+      schemaName: 'quizQuestions',
+      schemaDescription: 'Objeto JSON con exactamente 10 preguntas, cada una con opciones y correctAnswer 0-based.',
+      experimental_repairText: repairQuizJson,
       system: `Eres un experto generador de exámenes matemáticos universitarios. 
-Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
+    Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
+
+    REQUISITOS DEL CUESTIONARIO:
+    - Genera exactamente 10 preguntas, sin importar el modo.
+
+    FORMATO ESTRICTO:
+    - Responde solo con JSON válido (sin markdown, sin comentarios).
+    - Escapa los backslashes en LaTeX usando \\ dentro de strings JSON.
 
 REGLAS DE ORO PARA MATEMÁTICAS (LaTeX):
-- Usa símbolos matemáticos estándar: ^ para potencias, \wedge para conjunción (y), \vee para disyunción (o).
+    - Usa símbolos matemáticos estándar: ^ para potencias, \\wedge para conjunción (y), \\vee para disyunción (o).
 - TODO el contenido matemático (variables p, q, x, fórmulas, símbolos) debe ir OBLIGATORIAMENTE entre símbolos $.
-- Ejemplo: "$p \wedge q$", "$x^2$", "$\frac{a}{b}$".
-- EVITA comandos de texto como \textasciicircum. Usa el símbolo directo o el comando matemático.
+    - Ejemplo: "$p \\wedge q$", "$x^2$", "$\\frac{a}{b}$".
+    - EVITA comandos de texto como \\textasciicircum. Usa el símbolo directo o el comando matemático.
 - No incluyas texto explicativo fuera del JSON.`,
       prompt: `Genera ${questionCount} preguntas de opción múltiple de nivel universitario para la materia ${subject}.
 
@@ -143,6 +172,11 @@ ${modeDescription}
 TEMAS ESPECÍFICOS A CUBRIR: 
 ${topicsText}
 
+ENFOQUE DE CALIDAD:
+- Como son solo ${questionCount} preguntas, prioriza la calidad, claridad y variedad.
+- Maximiza la cobertura de subtemas seleccionados y evita repeticiones.
+- Mantén las explicaciones concisas (2-4 frases) para evitar respuestas demasiado largas.
+
 REQUISITOS ADICIONALES:
 ${previousNote}
 - 4-6 opciones por pregunta.
@@ -153,7 +187,23 @@ ${previousNote}
     })
 
     console.log('[generateObject] Success! Questions:', object.questions.length)
-    return Response.json({ questions: object.questions })
+    const shuffledQuestions = object.questions.map((q) => {
+      const optionsWithIndex = q.options.map((text, index) => ({ text, index }))
+      shuffleInPlace(optionsWithIndex)
+
+      const newOptions = optionsWithIndex.map((o) => o.text)
+      const newCorrectAnswer = optionsWithIndex.findIndex(
+        (o) => o.index === q.correctAnswer
+      )
+
+      return {
+        ...q,
+        options: newOptions,
+        correctAnswer: newCorrectAnswer
+      }
+    })
+
+    return Response.json({ questions: shuffledQuestions })
   } catch (error: any) {
     console.error('[generateObject] ERROR:', error.message)
     return Response.json({ 

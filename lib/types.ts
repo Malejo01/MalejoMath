@@ -18,6 +18,7 @@ export interface Unit {
 export interface Topic {
   id: string
   name: string
+  group?: string
   completed: boolean
 }
 
