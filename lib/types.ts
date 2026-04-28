@@ -67,6 +67,8 @@ export interface UserProgress {
   lastAttemptDate: string | null
   weakPoints: WeakPoint[]
   subjectProgress: Record<string, number>
+  subjectAverages: Record<string, number>
+  subjectAttemptCounts: Record<string, number>
   usedQuestionIds: string[]
 }
 

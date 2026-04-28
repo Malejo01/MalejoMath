@@ -32,6 +32,7 @@ interface AppState {
   nextQuestion: () => void
   finishQuiz: () => QuizResult
   updateStreak: (passed: boolean) => void
+  updateSubjectAverage: (subject: string, score: number) => void
   addWeakPoint: (topic: string, topicName: string, subject: string) => void
   removeWeakPoint: (topic: string) => void
   addUsedQuestionIds: (ids: string[]) => void
@@ -45,6 +46,16 @@ const initialProgress: UserProgress = {
   lastAttemptDate: null,
   weakPoints: [],
   subjectProgress: {
+    algebra: 0,
+    analisis: 0,
+    probabilidad: 0
+  },
+  subjectAverages: {
+    algebra: 0,
+    analisis: 0,
+    probabilidad: 0
+  },
+  subjectAttemptCounts: {
     algebra: 0,
     analisis: 0,
     probabilidad: 0
@@ -136,6 +147,8 @@ export const useAppStore = create<AppState>()(
         
         // Add weak points for incorrect answers
         if (config) {
+          get().updateSubjectAverage(config.subject, score)
+
           incorrectAnswers.forEach(a => {
             get().addWeakPoint(a.topic, a.topicName, config.subject)
           })
@@ -162,6 +175,29 @@ export const useAppStore = create<AppState>()(
           lastAttemptDate: new Date().toISOString()
         }
       })),
+
+      updateSubjectAverage: (subject, score) => set((state) => {
+        const currentAverages = state.userProgress.subjectAverages ?? initialProgress.subjectAverages
+        const currentAttempts = state.userProgress.subjectAttemptCounts ?? initialProgress.subjectAttemptCounts
+        const previousAttempts = currentAttempts[subject] ?? 0
+        const previousAverage = currentAverages[subject] ?? 0
+        const nextAttempts = previousAttempts + 1
+        const nextAverage = Number((((previousAverage * previousAttempts) + score) / nextAttempts).toFixed(2))
+
+        return {
+          userProgress: {
+            ...state.userProgress,
+            subjectAverages: {
+              ...currentAverages,
+              [subject]: nextAverage
+            },
+            subjectAttemptCounts: {
+              ...currentAttempts,
+              [subject]: nextAttempts
+            }
+          }
+        }
+      }),
       
       addWeakPoint: (topic, topicName, subject) => set((state) => {
         const existing = state.userProgress.weakPoints.find(wp => wp.topic === topic)
