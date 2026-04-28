@@ -11,7 +11,6 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",
     "@hookform/resolvers": "^3.9.1",
-    "@neondatabase/serverless": "^1.1.0",
     "@radix-ui/react-accordion": "1.2.12",
     "@radix-ui/react-alert-dialog": "1.1.15",
     "@radix-ui/react-aspect-ratio": "1.1.8",
@@ -67,6 +66,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
+    "@types/katex": "^0.16.7",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
