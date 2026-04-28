@@ -1,19 +1,23 @@
 'use client'
 
+import { useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle, X, ChevronRight, Zap } from 'lucide-react'
+import { AlertTriangle, X, ChevronRight, Zap, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import type { WeakPoint } from '@/lib/types'
 import { subjects } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { QuizModeDialog } from './quiz-mode-dialog'
 
 interface WeakPointsSectionProps {
   weakPoints: WeakPoint[]
 }
 
 export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
-  const { removeWeakPoint, setSelectedSubject, setActiveView } = useAppStore()
+  const { removeWeakPoint, setActiveView, startQuiz, getUsedQuestionIds } = useAppStore()
+  const [loadingSubjectId, setLoadingSubjectId] = useState<string | null>(null)
+  const [practiceModalSubjectId, setPracticeModalSubjectId] = useState<string | null>(null)
 
   const getTopicName = (topicId: string): string => {
     for (const subject of subjects) {
@@ -30,9 +34,52 @@ export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
     return subject?.name || subjectId
   }
 
-  const handlePractice = (subjectId: string) => {
-    setSelectedSubject(subjectId)
-    setActiveView('selector')
+  const handlePractice = async (subjectId: string, points: WeakPoint[], mode: 'teorico' | 'practico') => {
+    const subject = subjects.find((item) => item.id === subjectId)
+    if (!subject || points.length === 0) return
+
+    const topics = points.map((point) => ({
+      id: point.topic,
+      name: point.topicName || getTopicName(point.topic)
+    }))
+
+    setLoadingSubjectId(subjectId)
+    setPracticeModalSubjectId(null)
+    setActiveView('loading')
+
+    try {
+      const response = await fetch('/api/generate-quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: subject.name,
+          topics,
+          mode,
+          previousQuestionIds: getUsedQuestionIds()
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.questions && data.questions.length === 10) {
+        startQuiz(
+          {
+            subject: subject.id,
+            subjectName: subject.name,
+            topics,
+            mode,
+            questionCount: 10
+          },
+          data.questions
+        )
+      } else {
+        setActiveView('dashboard')
+      }
+    } catch {
+      setActiveView('dashboard')
+    } finally {
+      setLoadingSubjectId(null)
+    }
   }
 
   // Group weak points by subject
@@ -69,13 +116,32 @@ export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handlePractice(subjectId)}
+                  onClick={() => setPracticeModalSubjectId(subjectId)}
+                  disabled={loadingSubjectId === subjectId}
                   className="h-8 px-3 border-2 border-orange-300 bg-white hover:bg-orange-50 text-orange-600 font-bold"
                 >
-                  Practicar
-                  <ChevronRight className="w-4 h-4 ml-1" />
+                  {loadingSubjectId === subjectId ? (
+                    <>
+                      <Loader2 className="w-4 h-4 ml-1 animate-spin" />
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      Practicar
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </>
+                  )}
                 </Button>
               </div>
+
+              <QuizModeDialog
+                open={practiceModalSubjectId === subjectId}
+                onOpenChange={(open) => setPracticeModalSubjectId(open ? subjectId : null)}
+                onSelectMode={(mode) => handlePractice(subjectId, points, mode)}
+                isLoading={loadingSubjectId === subjectId}
+                title="Practicar temas a reforzar"
+                description="Elige el tipo de examen para generar 10 preguntas sobre los temas que necesitas reforzar."
+              />
               
               <div className="flex flex-wrap gap-2">
                 {points.map((wp) => (

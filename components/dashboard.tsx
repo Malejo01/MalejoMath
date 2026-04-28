@@ -9,7 +9,7 @@ import { StreakBadge } from './streak-badge'
 import { WeakPointsSection } from './weak-points-section'
 import { MathBackground } from './math-background'
 import { Card } from '@/components/ui/card'
-import { GraduationCap, Target, Flame, TrendingUp } from 'lucide-react'
+import { GraduationCap, Target, TrendingUp, Sigma, LineChart, BarChart3, BookOpen } from 'lucide-react'
 
 export function Dashboard() {
   const { userProgress, clearSelectedTopics, setSelectedSubject } = useAppStore()
@@ -26,6 +26,46 @@ export function Dashboard() {
   }
 
   const selectedSubject = subjects.find(s => s.id === activeSubject)
+  const selectedSubjectAverage = activeSubject
+    ? (userProgress.subjectAverages?.[activeSubject] ?? 0)
+    : 0
+
+  const selectedSubjectAttempts = activeSubject
+    ? (userProgress.subjectAttemptCounts?.[activeSubject] ?? 0)
+    : 0
+
+  const averageCardConfig = {
+    algebra: {
+      icon: Sigma,
+      iconBg: 'bg-[var(--algebra-light)]',
+      iconText: 'text-[var(--algebra)]',
+      title: 'Tu promedio en Algebra',
+    },
+    analisis: {
+      icon: LineChart,
+      iconBg: 'bg-[var(--analysis-light)]',
+      iconText: 'text-[var(--analysis)]',
+      title: 'Tu promedio en Analisis',
+    },
+    probabilidad: {
+      icon: BarChart3,
+      iconBg: 'bg-[var(--probability-light)]',
+      iconText: 'text-[var(--probability)]',
+      title: 'Tu promedio en Probabilidad',
+    },
+    default: {
+      icon: BookOpen,
+      iconBg: 'bg-muted',
+      iconText: 'text-muted-foreground',
+      title: 'Selecciona una materia',
+    }
+  }
+
+  const currentAverageCard = activeSubject
+    ? averageCardConfig[activeSubject as keyof typeof averageCardConfig] ?? averageCardConfig.default
+    : averageCardConfig.default
+
+  const AverageIcon = currentAverageCard.icon
   
   const totalProgress = Math.round(
     Object.values(userProgress.subjectProgress).reduce((a, b) => a + b, 0) / 3
@@ -56,12 +96,19 @@ export function Dashboard() {
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3">
           <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-9 h-9 rounded-xl bg-[var(--algebra-light)] flex items-center justify-center mb-1.5">
-                <Flame className="w-5 h-5 text-[var(--algebra)]" />
+            <div className="flex flex-col items-center text-center gap-1">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${currentAverageCard.iconBg}`}>
+                <AverageIcon className={`w-5 h-5 ${currentAverageCard.iconText}`} />
               </div>
-              <div className="text-xl font-black text-foreground">{userProgress.streak}</div>
-              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Racha</div>
+              <div className="text-lg font-black text-foreground leading-none">
+                {activeSubject ? selectedSubjectAverage.toFixed(2) : '--'}
+              </div>
+              <div className="text-[10px] text-muted-foreground font-semibold leading-tight">
+                {currentAverageCard.title}
+              </div>
+              <div className="text-[10px] text-muted-foreground/80">
+                {activeSubject ? `${selectedSubjectAttempts} evaluaciones` : 'Sin materia elegida'}
+              </div>
             </div>
           </Card>
           

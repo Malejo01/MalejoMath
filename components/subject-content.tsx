@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { BookOpen, Calculator, Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Subject, Topic } from '@/lib/types'
 import { useAppStore } from '@/lib/store'
+import { QuizModeDialog } from './quiz-mode-dialog'
 
 interface SubjectContentProps {
   subject: Subject
@@ -42,6 +43,7 @@ const colorConfig = {
 export function SubjectContent({ subject }: SubjectContentProps) {
   const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
+  const [showModeDialog, setShowModeDialog] = useState(false)
   const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   
@@ -58,6 +60,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     if (selectedTopics.length === 0) return
     
     setIsLoading(true)
+    setShowModeDialog(false)
     setActiveView('loading')
     
     try {
@@ -74,7 +77,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       
       const data = await response.json()
       
-      if (data.questions && data.questions.length > 0) {
+      if (data.questions && data.questions.length === 10) {
         startQuiz(
           {
             subject: subject.id,
@@ -307,40 +310,34 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         })}
       </div>
 
-      {/* Start Quiz Buttons - Fixed at bottom when topics selected */}
+      {/* Start Quiz Button - Fixed at bottom when topics selected */}
       {selectedTopics.length > 0 && (
-        <div className="sticky bottom-4 pt-4 space-y-3">
+        <div className="sticky bottom-4 pt-4">
           <Button
-            onClick={() => handleStartQuiz('teorico')}
+            onClick={() => setShowModeDialog(true)}
             disabled={isLoading}
             className={cn(
               'w-full h-14 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
-              'bg-gradient-to-r from-[var(--algebra)] to-[var(--algebra)]/80 text-white border-0',
+              'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)] text-white border-0',
               'disabled:opacity-50',
               'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
             )}
             size="lg"
           >
-            <BookOpen className="w-5 h-5" />
-            Empezar Cuestionario Teorico (10 preguntas)
-          </Button>
-          
-          <Button
-            onClick={() => handleStartQuiz('practico')}
-            disabled={isLoading}
-            className={cn(
-              'w-full h-14 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
-              'bg-gradient-to-r from-[var(--analysis)] to-[var(--analysis)]/80 text-white border-0',
-              'disabled:opacity-50',
-              'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
-            )}
-            size="lg"
-          >
-            <Calculator className="w-5 h-5" />
-            Empezar Cuestionario Practico (10 ejercicios)
+            <Play className="w-5 h-5" />
+            Empezar Cuestionario
           </Button>
         </div>
       )}
+
+      <QuizModeDialog
+        open={showModeDialog}
+        onOpenChange={setShowModeDialog}
+        onSelectMode={handleStartQuiz}
+        isLoading={isLoading}
+        title="Empezar cuestionario"
+        description="Selecciona el tipo de examen y se generaran 10 preguntas con los temas que elegiste."
+      />
     </div>
   )
 }

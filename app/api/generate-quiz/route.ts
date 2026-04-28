@@ -116,36 +116,38 @@ const repairQuizJson: RepairTextFunction = async ({ text }) => {
   return escaped
 }
 
-export async function POST(req: Request) {
-  const { subject, topics, mode, previousQuestionIds } = await req.json()
+function normalizeQuestionText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\$+/g, '')
+    .replace(/\\[a-zA-Z]+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
-  const questionCount = 10
-  const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
-
-  // Seleccionar el curriculum apropiado
-  let curriculum = ALGEBRA_CURRICULUM
-  if (subject.toLowerCase().includes('análisis') || subject.toLowerCase().includes('analisis')) {
-    curriculum = ANALISIS_CURRICULUM
-  } else if (subject.toLowerCase().includes('probabilidad') || subject.toLowerCase().includes('estadística')) {
-    curriculum = PROBABILIDAD_CURRICULUM
-  }
-
-  const modeDescription = mode === 'teorico'
-    ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
-    : 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
-
-  const previousNote = previousQuestionIds?.length > 0
-    ? 'Genera preguntas diferentes a las anteriores.'
-    : ''
-
-  try {
-    const { object } = await generateObject({
-      model: google('gemini-2.5-flash'), // Volvemos al modelo compatible con tu API
-      schema: quizSchema,
-      schemaName: 'quizQuestions',
-      schemaDescription: 'Objeto JSON con exactamente 10 preguntas, cada una con opciones y correctAnswer 0-based.',
-      experimental_repairText: repairQuizJson,
-      system: `Eres un experto generador de exámenes matemáticos universitarios. 
+async function generateQuizBatch({
+  subject,
+  curriculum,
+  modeDescription,
+  topicsText,
+  questionCount,
+  previousNote,
+}: {
+  subject: string
+  curriculum: string
+  modeDescription: string
+  topicsText: string
+  questionCount: number
+  previousNote: string
+}) {
+  const { object } = await generateObject({
+    model: google('gemini-2.5-flash'),
+    schema: quizSchema,
+    schemaName: 'quizQuestions',
+    schemaDescription: 'Objeto JSON con exactamente 10 preguntas, cada una con opciones y correctAnswer 0-based.',
+    experimental_repairText: repairQuizJson,
+    system: `Eres un experto generador de exámenes matemáticos universitarios. 
     Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
 
     REQUISITOS DEL CUESTIONARIO:
@@ -161,7 +163,7 @@ REGLAS DE ORO PARA MATEMÁTICAS (LaTeX):
     - Ejemplo: "$p \\wedge q$", "$x^2$", "$\\frac{a}{b}$".
     - EVITA comandos de texto como \\textasciicircum. Usa el símbolo directo o el comando matemático.
 - No incluyas texto explicativo fuera del JSON.`,
-      prompt: `Genera ${questionCount} preguntas de opción múltiple de nivel universitario para la materia ${subject}.
+    prompt: `Genera ${questionCount} preguntas de opción múltiple de nivel universitario para la materia ${subject}.
 
 CURRICULUM DE REFERENCIA:
 ${curriculum}
@@ -182,12 +184,81 @@ ${previousNote}
 - 4-6 opciones por pregunta.
 - 'correctAnswer' es el índice 0-based.
 - La explicación debe ser clara y detallada.`,
-      maxOutputTokens: 8000,
-      temperature: 0.5, // Menor temperatura para mas consistencia en el formato
-    })
+    maxOutputTokens: 8000,
+    temperature: 0.5,
+  })
 
-    console.log('[generateObject] Success! Questions:', object.questions.length)
-    const shuffledQuestions = object.questions.map((q) => {
+  return object.questions
+}
+
+export async function POST(req: Request) {
+  const { subject, topics, mode, previousQuestionIds, previousQuestions } = await req.json()
+
+  const questionCount = 10
+  const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
+  const previousQuestionList = Array.isArray(previousQuestions) ? previousQuestions : []
+  const previousQuestionTexts = previousQuestionList
+    .map((question: { question?: string }) => question.question)
+    .filter((question: string | undefined): question is string => Boolean(question))
+  const previousQuestionFingerprints = new Set(previousQuestionTexts.map(normalizeQuestionText))
+
+  // Seleccionar el curriculum apropiado
+  let curriculum = ALGEBRA_CURRICULUM
+  if (subject.toLowerCase().includes('análisis') || subject.toLowerCase().includes('analisis')) {
+    curriculum = ANALISIS_CURRICULUM
+  } else if (subject.toLowerCase().includes('probabilidad') || subject.toLowerCase().includes('estadística')) {
+    curriculum = PROBABILIDAD_CURRICULUM
+  }
+
+  const modeDescription = mode === 'teorico'
+    ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
+    : 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
+
+  const previousNote = previousQuestionTexts.length > 0
+    ? `NO repitas ni reformules estas preguntas previas:\n${previousQuestionTexts.map((question: string, index: number) => `${index + 1}. ${question}`).join('\n')}`
+    : previousQuestionIds?.length > 0
+      ? 'Genera preguntas diferentes a las anteriores.'
+    : ''
+
+  try {
+    const collectedQuestions = []
+
+    for (let attempt = 0; attempt < 3 && collectedQuestions.length < questionCount; attempt++) {
+      const generatedQuestions = await generateQuizBatch({
+        subject,
+        curriculum,
+        modeDescription,
+        topicsText,
+        questionCount,
+        previousNote,
+      })
+
+      console.log('[generateObject] Success! Questions:', generatedQuestions.length)
+
+      for (const question of generatedQuestions) {
+        const fingerprint = normalizeQuestionText(question.question)
+
+        if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) {
+          continue
+        }
+
+        previousQuestionFingerprints.add(fingerprint)
+        collectedQuestions.push(question)
+
+        if (collectedQuestions.length === questionCount) {
+          break
+        }
+      }
+    }
+
+    if (collectedQuestions.length < questionCount) {
+      return Response.json({
+        questions: [],
+        error: 'No se pudo generar un nuevo cuestionario completamente distinto. Intenta otra vez.'
+      }, { status: 409 })
+    }
+
+    const shuffledQuestions = collectedQuestions.map((q) => {
       const optionsWithIndex = q.options.map((text, index) => ({ text, index }))
       shuffleInPlace(optionsWithIndex)
 

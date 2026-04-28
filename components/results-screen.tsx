@@ -11,15 +11,17 @@ import { Home, RotateCcw, TrendingUp, TrendingDown, Sparkles, Trophy, XCircle, C
 import { cn } from '@/lib/utils'
 import confetti from 'canvas-confetti'
 import type { Answer } from '@/lib/types'
+import { QuizModeDialog } from './quiz-mode-dialog'
 
 export function ResultsScreen() {
-  const { currentQuiz, userProgress, resetQuiz, setSelectedSubject, setActiveView, clearSelectedTopics, startQuiz, getUsedQuestionIds } = useAppStore()
+  const { currentQuiz, userProgress, resetQuiz, setActiveView, startQuiz } = useAppStore()
   const { answers, questions, config } = currentQuiz
   const [showCorrect, setShowCorrect] = useState(false)
   const [showIncorrect, setShowIncorrect] = useState(false)
   const [loadingExplanation, setLoadingExplanation] = useState<string | null>(null)
   const [explanations, setExplanations] = useState<Record<string, string>>({})
   const [isRetrying, setIsRetrying] = useState(false)
+  const [showRetryModal, setShowRetryModal] = useState(false)
 
   const results = useMemo(() => {
     const correctAnswers = answers.filter(a => a.isCorrect)
@@ -90,10 +92,12 @@ export function ResultsScreen() {
     }
   }, [explanations])
 
-  const handleRetry = useCallback(async () => {
+  const handleRetry = useCallback(async (mode: 'teorico' | 'practico') => {
     if (!config) return
     
     setIsRetrying(true)
+    setShowRetryModal(false)
+    setActiveView('loading')
     
     try {
       const response = await fetch('/api/generate-quiz', {
@@ -102,25 +106,31 @@ export function ResultsScreen() {
         body: JSON.stringify({
           subject: config.subjectName,
           topics: config.topics,
-          mode: config.mode,
-          previousQuestionIds: getUsedQuestionIds()
+          mode,
+          previousQuestions: questions.map((question) => ({
+            id: question.id,
+            question: question.question,
+            topic: question.topic,
+            topicName: question.topicName
+          }))
         })
       })
       
       const data = await response.json()
       
-      if (data.questions && data.questions.length > 0) {
-        startQuiz(config, data.questions)
+      if (data.questions && data.questions.length === config.questionCount) {
+        startQuiz({ ...config, mode }, data.questions)
+      } else {
+        setActiveView('results')
       }
     } catch {
-      // Handle error silently
+      setActiveView('results')
     } finally {
       setIsRetrying(false)
     }
-  }, [config, getUsedQuestionIds, startQuiz])
+  }, [config, questions, setActiveView, startQuiz])
 
   const handleGoHome = () => {
-    clearSelectedTopics()
     resetQuiz()
   }
 
@@ -150,7 +160,7 @@ export function ResultsScreen() {
       </header>
 
       {/* Main Content */}
-      <main className="px-4 pb-36 space-y-5 relative z-10">
+      <main className="px-4 pb-[calc(9rem+env(safe-area-inset-bottom))] space-y-5 relative z-10">
         {/* Score Card */}
         <Card className={cn(
           'p-6 text-center border-2 overflow-hidden relative',
@@ -384,11 +394,11 @@ export function ResultsScreen() {
       </main>
 
       {/* Fixed Action Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/95 backdrop-blur-xl border-t-2 border-border">
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t-2 border-border bg-card px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,23,42,0.12)]">
         <div className="flex gap-3">
           <Button
             variant="outline"
-            onClick={handleRetry}
+            onClick={() => setShowRetryModal(true)}
             disabled={isRetrying}
             className="flex-1 h-14 gap-2 rounded-2xl border-2 font-bold"
           >
@@ -417,6 +427,15 @@ export function ResultsScreen() {
           </Button>
         </div>
       </div>
+
+      <QuizModeDialog
+        open={showRetryModal}
+        onOpenChange={setShowRetryModal}
+        onSelectMode={handleRetry}
+        isLoading={isRetrying}
+        title="Reintentar cuestionario"
+        description="Selecciona si quieres regenerar este cuestionario en modo teorico o practico con los mismos temas."
+      />
     </div>
   )
 }
