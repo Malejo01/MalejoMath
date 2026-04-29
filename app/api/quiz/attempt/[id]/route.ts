@@ -15,20 +15,21 @@ export async function GET(
 
     const { id: attemptId } = await params
 
-    // Verificar que el intento pertenece al usuario
+    // Verificar que el intento pertenece al usuario (user_id = clerk_id directamente)
     const attempt = await sql`
       SELECT 
-        qa.id,
-        qa.subject,
-        qa.mode,
-        qa.topics,
-        qa.total_questions,
-        qa.correct_answers,
-        qa.score,
-        qa.completed_at
-      FROM quiz_attempts qa
-      JOIN users u ON qa.user_id = u.id
-      WHERE qa.id = ${attemptId} AND u.clerk_id = ${userId}
+        id,
+        subject,
+        mode,
+        topics,
+        total_questions,
+        correct_answers,
+        incorrect_answers,
+        score,
+        passed,
+        completed_at
+      FROM quiz_attempts
+      WHERE id = ${attemptId} AND user_id = ${userId}
     `
 
     if (attempt.length === 0) {
@@ -39,6 +40,7 @@ export async function GET(
     const answers = await sql`
       SELECT 
         id,
+        question_index,
         question_id,
         question_text,
         options,
@@ -46,10 +48,11 @@ export async function GET(
         correct_answer,
         is_correct,
         explanation,
+        error_explanation,
         topic_name
       FROM quiz_answers
       WHERE quiz_attempt_id = ${attemptId}
-      ORDER BY id
+      ORDER BY question_index
     `
 
     return NextResponse.json({
@@ -59,8 +62,9 @@ export async function GET(
 
   } catch (error) {
     console.error('[v0] Error fetching attempt details:', error)
+    console.error('[v0] Error details:', error instanceof Error ? error.message : String(error))
     return NextResponse.json(
-      { error: 'Error al obtener los detalles del intento' },
+      { error: 'Error al obtener los detalles del intento', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
   }
