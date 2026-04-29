@@ -230,7 +230,7 @@ export default function HistoryPage() {
                           <div className="flex items-center gap-1">
                             <TrendingUp className="w-4 h-4" style={{ color: getSubjectColor(item.subject) }} />
                             <span className="font-bold" style={{ color: getSubjectColor(item.subject) }}>
-                              {item.max_score.toFixed(1)}
+                              {Number(item.max_score).toFixed(1)}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground">
@@ -299,7 +299,7 @@ export default function HistoryPage() {
                           <div className="flex items-center gap-2">
                             <div className="text-right">
                               <p className="text-2xl font-black" style={{ color: getSubjectColor(attempt.subject) }}>
-                                {attempt.score.toFixed(1)}
+                                {Number(attempt.score).toFixed(1)}
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {attempt.correct_answers}/{attempt.total_questions}
