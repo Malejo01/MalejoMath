@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAppStore } from '@/lib/store'
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import confetti from 'canvas-confetti'
 import type { Answer } from '@/lib/types'
 import { QuizModeDialog } from './quiz-mode-dialog'
+import { useAuth } from '@clerk/nextjs'
 
 export function ResultsScreen() {
   const { currentQuiz, userProgress, resetQuiz, setActiveView, startQuiz } = useAppStore()
@@ -22,6 +23,8 @@ export function ResultsScreen() {
   const [explanations, setExplanations] = useState<Record<string, string>>({})
   const [isRetrying, setIsRetrying] = useState(false)
   const [showRetryModal, setShowRetryModal] = useState(false)
+  const { isSignedIn } = useAuth()
+  const hasSavedRef = useRef(false)
 
   const results = useMemo(() => {
     const correctAnswers = answers.filter(a => a.isCorrect)
@@ -34,6 +37,44 @@ export function ResultsScreen() {
 
     return { correct, total, score, percentage, passed, correctAnswers, incorrectAnswers }
   }, [answers, questions])
+
+  // Save quiz result to database
+  useEffect(() => {
+    if (!isSignedIn || hasSavedRef.current || !config || answers.length === 0) return
+    
+    hasSavedRef.current = true
+    
+    const saveResult = async () => {
+      try {
+        await fetch('/api/quiz/save-result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: config.subjectName,
+            mode: config.mode,
+            topics: config.topics,
+            totalQuestions: questions.length,
+            correctAnswers: results.correct,
+            score: results.score,
+            answers: answers.map(a => ({
+              questionId: a.questionId,
+              questionText: a.questionText,
+              options: a.options,
+              selectedAnswer: a.selectedAnswer,
+              correctAnswer: a.correctAnswer,
+              isCorrect: a.isCorrect,
+              explanation: a.explanation || '',
+              topicName: a.topicName || ''
+            }))
+          })
+        })
+      } catch (error) {
+        console.error('Error saving quiz result:', error)
+      }
+    }
+    
+    saveResult()
+  }, [isSignedIn, config, answers, questions.length, results.correct, results.score])
 
   // Trigger confetti on passing
   useEffect(() => {

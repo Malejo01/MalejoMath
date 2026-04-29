@@ -4,6 +4,7 @@ import { GraduationCap, LogIn, ClipboardList } from 'lucide-react'
 import { SignInButton, Show, UserButton } from '@clerk/nextjs'
 import { StreakBadge } from './streak-badge'
 import { useAppStore } from '@/lib/store'
+import Link from 'next/link'
 
 export function Navbar() {
   const { userProgress } = useAppStore()
@@ -44,10 +45,12 @@ export function Navbar() {
 
           <Show when="signed-in">
             <div className="flex items-center gap-3">
-              <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-all active:scale-95 border border-border/50">
-                <ClipboardList className="w-4 h-4 text-primary" />
-                <span className="hidden sm:inline">Mis evaluaciones</span>
-              </button>
+              <Link href="/history">
+                <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-all active:scale-95 border border-border/50">
+                  <ClipboardList className="w-4 h-4 text-primary" />
+                  <span className="hidden sm:inline">Mis evaluaciones</span>
+                </button>
+              </Link>
               
               <UserButton 
                 appearance={{

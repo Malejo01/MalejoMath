@@ -39,7 +39,7 @@ const colorConfig = {
 
 export function SubjectTabs({ subjects, activeSubject, onSelect }: SubjectTabsProps) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
+    <div className="flex justify-between gap-2 pb-2 scrollbar-hide">
       {subjects.map((subject) => {
         const Icon = iconMap[subject.icon as keyof typeof iconMap] || BookOpen
         const isActive = activeSubject === subject.id
@@ -58,7 +58,7 @@ export function SubjectTabs({ subjects, activeSubject, onSelect }: SubjectTabsPr
             key={subject.id}
             onClick={() => onSelect(subject.id)}
             className={cn(
-              'flex-1 min-w-[100px] max-w-[140px] flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 transition-all duration-200',
+              'flex-1 min-w-[100px] flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 transition-all duration-200',
               'active:scale-95 touch-manipulation',
               isActive ? colors.active : colors.inactive
             )}
