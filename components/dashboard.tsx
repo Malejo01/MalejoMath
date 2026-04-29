@@ -9,7 +9,8 @@ import { StreakBadge } from './streak-badge'
 import { WeakPointsSection } from './weak-points-section'
 import { MathBackground } from './math-background'
 import { Card } from '@/components/ui/card'
-import { GraduationCap, Target, TrendingUp, Sigma, LineChart, BarChart3, BookOpen } from 'lucide-react'
+import { Navbar } from './navbar'
+import { Target, TrendingUp, Sigma, LineChart, BarChart3, BookOpen } from 'lucide-react'
 
 export function Dashboard() {
   const { userProgress, clearSelectedTopics, setSelectedSubject } = useAppStore()
@@ -75,21 +76,7 @@ export function Dashboard() {
     <div className="min-h-screen relative">
       <MathBackground />
       
-      {/* Header */}
-      <header className="sticky top-0 z-20 bg-card/90 backdrop-blur-xl border-b-2 border-border shadow-sm">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[var(--algebra)] to-[var(--analysis)] flex items-center justify-center shadow-lg">
-              <GraduationCap className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-black text-foreground tracking-tight">Malejo Math</h1>
-              <p className="text-xs text-muted-foreground font-medium">Aprende a tu ritmo</p>
-            </div>
-          </div>
-          <StreakBadge streak={userProgress.streak} size="sm" />
-        </div>
-      </header>
+      <Navbar />
 
       {/* Main Content */}
       <main className="px-4 py-5 pb-8 space-y-5">
