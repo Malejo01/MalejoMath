@@ -53,7 +53,7 @@ export async function GET() {
         subject,
         topic_id,
         topic_name,
-        highest_score,
+        highest_score AS max_score,
         attempts_count,
         last_attempt_at
       FROM topic_mastery
