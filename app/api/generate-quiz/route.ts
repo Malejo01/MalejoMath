@@ -133,6 +133,7 @@ async function generateQuizBatch({
   topicsText,
   questionCount,
   previousNote,
+  pedagogyNote,
 }: {
   subject: string
   curriculum: string
@@ -140,6 +141,7 @@ async function generateQuizBatch({
   topicsText: string
   questionCount: number
   previousNote: string
+  pedagogyNote: string
 }) {
   const { object } = await generateObject({
     model: google('gemini-2.5-flash'),
@@ -181,6 +183,7 @@ ENFOQUE DE CALIDAD:
 
 REQUISITOS ADICIONALES:
 ${previousNote}
+${pedagogyNote}
 - 4-6 opciones por pregunta.
 - 'correctAnswer' es el índice 0-based.
 - La explicación debe ser clara y detallada.`,
@@ -192,7 +195,7 @@ ${previousNote}
 }
 
 export async function POST(req: Request) {
-  const { subject, topics, mode, previousQuestionIds, previousQuestions } = await req.json()
+  const { subject, topics, mode, previousQuestionIds, previousQuestions, pedagogyContext } = await req.json()
 
   const questionCount = 10
   const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
@@ -220,6 +223,10 @@ export async function POST(req: Request) {
       ? 'Genera preguntas diferentes a las anteriores.'
     : ''
 
+  const pedagogyNote = typeof pedagogyContext === 'string' && pedagogyContext.trim().length > 0
+    ? `\nPREFERENCIAS PEDAGOGICAS DEL DOCENTE:\n${pedagogyContext}`
+    : ''
+
   try {
     const collectedQuestions = []
 
@@ -231,6 +238,7 @@ export async function POST(req: Request) {
         topicsText,
         questionCount,
         previousNote,
+        pedagogyNote,
       })
 
       console.log('[generateObject] Success! Questions:', generatedQuestions.length)

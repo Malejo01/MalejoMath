@@ -1,13 +1,65 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { GraduationCap, LogIn, ClipboardList } from 'lucide-react'
-import { SignInButton, Show, UserButton } from '@clerk/nextjs'
+import { SignInButton, Show, UserButton, useAuth } from '@clerk/nextjs'
 import { StreakBadge } from './streak-badge'
 import { useAppStore } from '@/lib/store'
 import Link from 'next/link'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { UserRole } from '@/lib/types'
 
 export function Navbar() {
-  const { userProgress } = useAppStore()
+  const { userProgress, userProfile, setUserProfile, setUserRole } = useAppStore()
+  const { isSignedIn } = useAuth()
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false)
+
+  useEffect(() => {
+    if (!isSignedIn) return
+
+    let isMounted = true
+
+    const loadProfile = async () => {
+      try {
+        const response = await fetch('/api/user/profile')
+        const data = await response.json()
+        if (!response.ok || !isMounted) return
+        setUserProfile(data.profile)
+      } catch {
+        // ignore profile bootstrap errors in navbar
+      }
+    }
+
+    loadProfile()
+
+    return () => {
+      isMounted = false
+    }
+  }, [isSignedIn, setUserProfile])
+
+  const handleRoleChange = async (nextRole: UserRole) => {
+    setIsUpdatingRole(true)
+
+    try {
+      const response = await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: nextRole }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'No se pudo cambiar el rol')
+      }
+
+      setUserProfile(data.profile)
+      setUserRole(data.profile.role)
+    } catch {
+      // keep current role state on failure
+    } finally {
+      setIsUpdatingRole(false)
+    }
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full bg-card/80 backdrop-blur-xl border-b border-border/50 shadow-sm transition-all duration-300">
@@ -45,6 +97,20 @@ export function Navbar() {
 
           <Show when="signed-in">
             <div className="flex items-center gap-3">
+              <Select
+                value={userProfile?.role || 'student'}
+                onValueChange={(value) => handleRoleChange(value as UserRole)}
+                disabled={isUpdatingRole}
+              >
+                <SelectTrigger className="h-9 w-[130px] rounded-xl bg-secondary border-border/60">
+                  <SelectValue placeholder="Modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="student">Modo Alumno</SelectItem>
+                  <SelectItem value="teacher">Modo Docente</SelectItem>
+                </SelectContent>
+              </Select>
+
               <Link href="/history">
                 <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-all active:scale-95 border border-border/50">
                   <ClipboardList className="w-4 h-4 text-primary" />

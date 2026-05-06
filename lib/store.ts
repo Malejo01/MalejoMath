@@ -2,11 +2,22 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { UserProgress, QuizConfig, QuizResult, Question, Answer } from './types'
+import type {
+  UserProgress,
+  QuizConfig,
+  QuizResult,
+  Question,
+  Answer,
+  TeacherProgram,
+  UserProfile,
+  UserRole,
+} from './types'
 
 interface AppState {
   // User Progress
   userProgress: UserProgress
+  userProfile: UserProfile | null
+  teacherPrograms: TeacherProgram[]
   
   // Current Quiz State
   currentQuiz: {
@@ -39,6 +50,10 @@ interface AppState {
   resetQuiz: () => void
   getUsedQuestionIds: () => string[]
   updateQuestions: (questions: Question[]) => void
+  setUserProfile: (profile: UserProfile | null) => void
+  setUserRole: (role: UserRole) => void
+  setTeacherPrograms: (programs: TeacherProgram[]) => void
+  addTeacherProgram: (program: TeacherProgram) => void
 }
 
 const initialProgress: UserProgress = {
@@ -67,6 +82,8 @@ export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       userProgress: initialProgress,
+      userProfile: null,
+      teacherPrograms: [],
       
       currentQuiz: {
         config: null,
@@ -253,7 +270,26 @@ export const useAppStore = create<AppState>()(
           ...state.currentQuiz,
           questions
         }
-      }))
+      })),
+
+      setUserProfile: (profile) => set({ userProfile: profile }),
+
+      setUserRole: (role) => set((state) => ({
+        userProfile: state.userProfile
+          ? { ...state.userProfile, role }
+          : {
+              id: '',
+              email: '',
+              displayName: '',
+              role,
+            },
+      })),
+
+      setTeacherPrograms: (programs) => set({ teacherPrograms: programs }),
+
+      addTeacherProgram: (program) => set((state) => ({
+        teacherPrograms: [program, ...state.teacherPrograms],
+      })),
     }),
     {
       name: 'malejo-math-storage',

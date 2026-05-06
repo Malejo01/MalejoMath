@@ -120,7 +120,9 @@ export function ResultsScreen() {
           selectedAnswer: answer.selectedAnswer,
           correctAnswer: answer.correctAnswer,
           options: answer.options,
-          topic: answer.topicName
+          topic: answer.topicName,
+          subject: config?.subjectName,
+          pedagogyContext: config?.pedagogyContext,
         })
       })
       

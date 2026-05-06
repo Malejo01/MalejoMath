@@ -5,9 +5,11 @@ export const sql = neon(process.env.DATABASE_URL!)
 // Types for database operations
 export interface DbUser {
   id: string
-  clerk_id: string
   email: string
+  display_name: string
+  role: 'student' | 'teacher'
   created_at: Date
+  updated_at: Date
 }
 
 export interface DbTopicMastery {
@@ -45,4 +47,19 @@ export interface DbQuizAnswer {
   is_correct: boolean
   explanation: string
   topic_name: string
+}
+
+export interface DbTeacherProgram {
+  id: number
+  user_id: string
+  subject_name: string
+  pedagogy_profile: unknown
+  units: unknown
+  source_file_name: string | null
+  source_mime_type: string | null
+  source_file_size_bytes: number | null
+  source_expires_at: Date | null
+  status: 'active' | 'archived'
+  created_at: Date
+  updated_at: Date
 }

@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
 
 export async function POST(req: Request) {
-  const { question, selectedAnswer, correctAnswer, options, topic, subject } = await req.json()
+  const { question, selectedAnswer, correctAnswer, options, topic, subject, pedagogyContext } = await req.json()
   
   // Contexto especifico segun la materia
   let subjectContext = ''
@@ -22,6 +22,10 @@ CONTEXTO DEL PROGRAMA DE ANÁLISIS MATEMÁTICO I:
 - Para integrales, considera los métodos de sustitución, partes o fracciones parciales
 `
   }
+
+  const pedagogySection = typeof pedagogyContext === 'string' && pedagogyContext.trim().length > 0
+    ? `\nREFERENCIAS PEDAGOGICAS DEL DOCENTE:\n${pedagogyContext}\n`
+    : ''
   
   const { text } = await generateText({
     model: google('gemini-2.5-flash'),
@@ -32,6 +36,7 @@ CONTEXTO DEL PROGRAMA DE ANÁLISIS MATEMÁTICO I:
 ${subjectContext}
 TEMA: ${topic}
 MATERIA: ${subject || 'Matemáticas'}
+${pedagogySection}
 
 PREGUNTA:
 ${question}

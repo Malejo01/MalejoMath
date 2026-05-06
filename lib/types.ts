@@ -7,6 +7,9 @@ export interface Subject {
   color: string
   units: Unit[]
   progress: number
+  source?: 'core' | 'teacher'
+  programId?: number
+  pedagogyProfile?: PedagogyProfile
 }
 
 export interface Unit {
@@ -38,6 +41,7 @@ export interface QuizConfig {
   topics: { id: string; name: string }[]
   mode: 'teorico' | 'practico'
   questionCount: number
+  pedagogyContext?: string
 }
 
 export interface Answer {
@@ -86,4 +90,49 @@ export interface Attempt {
   type: 'teorico' | 'practico'
   topics: string[]
   createdAt: string
+}
+
+export type UserRole = 'student' | 'teacher'
+
+export interface PedagogyProfile {
+  level: string
+  degree: string
+  academicYear: string
+  complexity: string
+  assessmentStyle: 'teorico' | 'practico' | 'mixto'
+  methodology: string
+}
+
+export interface ProgramSubtopic {
+  id: string
+  name: string
+}
+
+export interface ProgramTopic {
+  id: string
+  name: string
+  subtopics: ProgramSubtopic[]
+}
+
+export interface ProgramUnit {
+  id: string
+  name: string
+  topics: ProgramTopic[]
+}
+
+export interface TeacherProgram {
+  id: number
+  userId: string
+  subjectName: string
+  pedagogyProfile: PedagogyProfile
+  units: ProgramUnit[]
+  sourceFileName: string | null
+  createdAt: string
+}
+
+export interface UserProfile {
+  id: string
+  email: string
+  displayName: string
+  role: UserRole
 }

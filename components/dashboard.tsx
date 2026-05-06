@@ -3,30 +3,72 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
 import { subjects } from '@/lib/data'
+import { teacherProgramToSubject } from '@/lib/teacher-programs'
 import { SubjectTabs } from './subject-tabs'
 import { SubjectContent } from './subject-content'
 import { StreakBadge } from './streak-badge'
 import { WeakPointsSection } from './weak-points-section'
 import { MathBackground } from './math-background'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Navbar } from './navbar'
-import { Target, TrendingUp, Sigma, LineChart, BarChart3, BookOpen } from 'lucide-react'
+import { Target, TrendingUp, Sigma, LineChart, BarChart3, BookOpen, Upload } from 'lucide-react'
+import { useAuth } from '@clerk/nextjs'
+import { TeacherProgramUploadModal } from './teacher-program-upload-modal'
+import type { TeacherProgram } from '@/lib/types'
 
 export function Dashboard() {
-  const { userProgress, clearSelectedTopics, setSelectedSubject } = useAppStore()
+  const { userProgress, userProfile, teacherPrograms, clearSelectedTopics, setSelectedSubject, setTeacherPrograms, addTeacherProgram } = useAppStore()
+  const { isSignedIn } = useAuth()
   const [activeSubject, setActiveSubject] = useState<string | null>(null)
+  const [showUploadModal, setShowUploadModal] = useState(false)
+
+  const teacherSubjects = teacherPrograms.map((program) => teacherProgramToSubject(program))
+  const allSubjects = [...subjects, ...teacherSubjects]
   
   // Clear selected topics when dashboard mounts (fresh start)
   useEffect(() => {
     clearSelectedTopics()
   }, [clearSelectedTopics])
+
+  useEffect(() => {
+    if (!isSignedIn || userProfile?.role !== 'teacher') {
+      setTeacherPrograms([])
+      return
+    }
+
+    let isMounted = true
+
+    const loadPrograms = async () => {
+      try {
+        const response = await fetch('/api/teacher/programs')
+        const data = await response.json()
+
+        if (!response.ok || !isMounted) {
+          return
+        }
+
+        setTeacherPrograms((data.programs || []) as TeacherProgram[])
+      } catch {
+        if (isMounted) {
+          setTeacherPrograms([])
+        }
+      }
+    }
+
+    loadPrograms()
+
+    return () => {
+      isMounted = false
+    }
+  }, [isSignedIn, userProfile?.role, setTeacherPrograms])
   
   const handleSubjectChange = (subjectId: string | null) => {
     setActiveSubject(subjectId)
     setSelectedSubject(subjectId)
   }
 
-  const selectedSubject = subjects.find(s => s.id === activeSubject)
+  const selectedSubject = allSubjects.find(s => s.id === activeSubject)
   const selectedSubjectAverage = activeSubject
     ? (userProgress.subjectAverages?.[activeSubject] ?? 0)
     : 0
@@ -125,8 +167,16 @@ export function Dashboard() {
           <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3 px-1">
             Materias
           </h2>
+          {userProfile?.role === 'teacher' && (
+            <div className="mb-3">
+              <Button onClick={() => setShowUploadModal(true)} className="rounded-xl font-bold">
+                <Upload className="w-4 h-4 mr-2" />
+                Subir Programa
+              </Button>
+            </div>
+          )}
           <SubjectTabs 
-            subjects={subjects} 
+            subjects={allSubjects} 
             activeSubject={activeSubject}
             onSelect={handleSubjectChange}
           />
@@ -144,6 +194,12 @@ export function Dashboard() {
           <WeakPointsSection weakPoints={userProgress.weakPoints} />
         )}
       </main>
+
+      <TeacherProgramUploadModal
+        open={showUploadModal}
+        onOpenChange={setShowUploadModal}
+        onProgramCreated={addTeacherProgram}
+      />
     </div>
   )
 }

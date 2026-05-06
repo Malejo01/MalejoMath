@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import type { Subject, Topic } from '@/lib/types'
 import { useAppStore } from '@/lib/store'
 import { QuizModeDialog } from './quiz-mode-dialog'
+import { pedagogyProfileToContext } from '@/lib/teacher-programs'
 
 interface SubjectContentProps {
   subject: Subject
@@ -48,6 +49,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   
   const colors = colorConfig[subject.id as keyof typeof colorConfig] || colorConfig.algebra
+  const pedagogyContext = subject.pedagogyProfile
+    ? pedagogyProfileToContext(subject.pedagogyProfile)
+    : undefined
 
   const totalTopics = subject.units.reduce((acc, unit) => acc + unit.topics.length, 0)
   const completedTopics = subject.units.reduce(
@@ -71,6 +75,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
           subject: subject.name,
           topics: selectedTopics,
           mode,
+          pedagogyContext,
           previousQuestionIds: getUsedQuestionIds()
         })
       })
@@ -84,7 +89,8 @@ export function SubjectContent({ subject }: SubjectContentProps) {
             subjectName: subject.name,
             topics: selectedTopics,
             mode,
-            questionCount: 10
+            questionCount: 10,
+            pedagogyContext,
           },
           data.questions
         )

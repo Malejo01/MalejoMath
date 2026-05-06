@@ -81,7 +81,9 @@ export function QuizEngine() {
           selectedAnswer: answerState.selected,
           correctAnswer: currentQuestion.correctAnswer,
           options: currentQuestion.options,
-          topic: currentQuestion.topicName
+          topic: currentQuestion.topicName,
+          subject: config?.subjectName,
+          pedagogyContext: config?.pedagogyContext,
         })
       })
       
