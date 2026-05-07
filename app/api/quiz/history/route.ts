@@ -2,7 +2,7 @@ import { sql } from '@/lib/db'
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     console.log('[v0] History API called')
     
@@ -25,9 +25,14 @@ export async function GET() {
       return NextResponse.json({ attempts: [], mastery: [] })
     }
 
+    const { searchParams } = new URL(req.url)
+    const subjectFilter = searchParams.get('subject')?.trim() || ''
+    const modeFilter = searchParams.get('mode')?.trim() || ''
+    const createdAfterFilter = searchParams.get('createdAfter')?.trim() || ''
+
     // Obtener intentos de quiz (ultimos 20)
     console.log('[v0] Fetching quiz attempts...')
-    const attempts = await sql`
+    const rawAttempts = await sql`
       SELECT 
         id,
         subject,
@@ -44,6 +49,15 @@ export async function GET() {
       ORDER BY completed_at DESC
       LIMIT 20
     `
+    const attempts = rawAttempts.filter((attempt) => {
+      const matchesSubject = subjectFilter.length === 0 || String(attempt.subject).toLowerCase().includes(subjectFilter.toLowerCase())
+      const matchesMode = modeFilter.length === 0 || String(attempt.mode) === modeFilter
+      const createdAfterTime = createdAfterFilter.length > 0 ? new Date(createdAfterFilter).getTime() : Number.NaN
+      const completedTime = new Date(attempt.completed_at).getTime()
+      const matchesDate = Number.isNaN(createdAfterTime) || completedTime >= createdAfterTime
+
+      return matchesSubject && matchesMode && matchesDate
+    })
     console.log('[v0] Found', attempts.length, 'attempts')
 
     // Obtener dominio de temas

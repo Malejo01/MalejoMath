@@ -1,8 +1,9 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { BookOpen, TrendingUp, BarChart3 } from 'lucide-react'
+import { BookOpen, TrendingUp, BarChart3, Calculator, Sigma, ChartLine, FlaskConical, Atom, Ruler, Landmark, PieChart, Target } from 'lucide-react'
 import type { Subject } from '@/lib/types'
+import { SUBJECT_COLOR_CLASS } from '@/lib/subject-appearance'
 
 interface SubjectTabsProps {
   subjects: Subject[]
@@ -13,7 +14,17 @@ interface SubjectTabsProps {
 const iconMap = {
   algebra: BookOpen,
   analysis: TrendingUp,
-  probability: BarChart3
+  probability: BarChart3,
+  'book-open': BookOpen,
+  calculator: Calculator,
+  sigma: Sigma,
+  'chart-line': ChartLine,
+  'flask-conical': FlaskConical,
+  atom: Atom,
+  ruler: Ruler,
+  landmark: Landmark,
+  'pie-chart': PieChart,
+  target: Target,
 }
 
 const colorConfig = {
@@ -46,7 +57,16 @@ export function SubjectTabs({ subjects, activeSubject, onSelect }: SubjectTabsPr
           : 'Materia'
         const Icon = iconMap[subject.icon as keyof typeof iconMap] || BookOpen
         const isActive = activeSubject === subject.id
-        const colors = colorConfig[subject.id as keyof typeof colorConfig] || colorConfig.algebra
+        const isTeacherSubject = subject.source === 'teacher'
+        const teacherColorConfig = SUBJECT_COLOR_CLASS[subject.color as keyof typeof SUBJECT_COLOR_CLASS]
+        const colors = isTeacherSubject && teacherColorConfig
+          ? {
+              active: teacherColorConfig.active,
+              inactive: teacherColorConfig.inactive,
+              icon: 'text-current',
+              iconActive: 'text-white'
+            }
+          : colorConfig[subject.id as keyof typeof colorConfig] || colorConfig.algebra
         
         // Calculate progress
         const totalTopics = subject.units.reduce((acc, unit) => acc + unit.topics.length, 0)
@@ -72,8 +92,8 @@ export function SubjectTabs({ subjects, activeSubject, onSelect }: SubjectTabsPr
             )}>
               <Icon className={cn('w-5 h-5', isActive ? colors.iconActive : colors.icon)} />
             </div>
-            <span className="text-xs font-bold truncate w-full text-center">
-              {subjectName.split(' ')[0]}
+            <span className="text-xs font-bold w-full text-center" title={subjectName}>
+              <span className="line-clamp-2 leading-tight block">{subjectName}</span>
             </span>
             <div className="w-full h-1.5 bg-white/30 rounded-full overflow-hidden">
               <div 

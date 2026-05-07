@@ -5,6 +5,8 @@ import type {
   ProgramUnit,
   ProgramTopic,
   ProgramSubtopic,
+  SubjectColorName,
+  SubjectIconName,
 } from '@/lib/types'
 
 function normalizeSubtopics(topic: ProgramTopic): ProgramSubtopic[] {
@@ -60,14 +62,22 @@ export function teacherProgramToSubject(program: TeacherProgram): Subject {
   const pedagogyProfile =
     (program as TeacherProgram & { pedagogy_profile?: PedagogyProfile }).pedagogyProfile ||
     (program as TeacherProgram & { pedagogy_profile?: PedagogyProfile }).pedagogy_profile
+  const iconName =
+    (program as TeacherProgram & { iconName?: SubjectIconName; icon_name?: SubjectIconName }).iconName ||
+    (program as TeacherProgram & { iconName?: SubjectIconName; icon_name?: SubjectIconName }).icon_name ||
+    'book-open'
+  const colorName =
+    (program as TeacherProgram & { colorName?: SubjectColorName; color_name?: SubjectColorName }).colorName ||
+    (program as TeacherProgram & { colorName?: SubjectColorName; color_name?: SubjectColorName }).color_name ||
+    'teal'
 
   const normalizedUnits = normalizeUnits((program as TeacherProgram & { units: ProgramUnit[] | unknown }).units)
 
   return {
     id: `teacher-${id}`,
     name: subjectName,
-    icon: 'teacher',
-    color: 'teacher',
+    icon: iconName,
+    color: colorName,
     progress: 0,
     source: 'teacher',
     programId: id,

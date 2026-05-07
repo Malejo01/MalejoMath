@@ -9,6 +9,8 @@ import type {
   Question,
   Answer,
   TeacherProgram,
+  TeacherProgramFilters,
+  TeacherQuiz,
   UserProfile,
   UserRole,
 } from './types'
@@ -18,6 +20,8 @@ interface AppState {
   userProgress: UserProgress
   userProfile: UserProfile | null
   teacherPrograms: TeacherProgram[]
+  teacherQuizzes: TeacherQuiz[]
+  teacherProgramFilters: TeacherProgramFilters
   
   // Current Quiz State
   currentQuiz: {
@@ -54,6 +58,13 @@ interface AppState {
   setUserRole: (role: UserRole) => void
   setTeacherPrograms: (programs: TeacherProgram[]) => void
   addTeacherProgram: (program: TeacherProgram) => void
+  updateTeacherProgram: (programId: number, updates: Partial<TeacherProgram>) => void
+  removeTeacherProgram: (programId: number) => void
+  setTeacherQuizzes: (quizzes: TeacherQuiz[]) => void
+  addTeacherQuiz: (quiz: TeacherQuiz) => void
+  updateTeacherQuiz: (quizId: number, updates: Partial<TeacherQuiz>) => void
+  removeTeacherQuiz: (quizId: number) => void
+  setTeacherProgramFilters: (filters: Partial<TeacherProgramFilters>) => void
 }
 
 const initialProgress: UserProgress = {
@@ -78,12 +89,22 @@ const initialProgress: UserProgress = {
   usedQuestionIds: []
 }
 
+const initialTeacherProgramFilters: TeacherProgramFilters = {
+  name: '',
+  level: '',
+  degree: '',
+  mode: '',
+  createdAfter: '',
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       userProgress: initialProgress,
       userProfile: null,
       teacherPrograms: [],
+      teacherQuizzes: [],
+      teacherProgramFilters: initialTeacherProgramFilters,
       
       currentQuiz: {
         config: null,
@@ -289,6 +310,40 @@ export const useAppStore = create<AppState>()(
 
       addTeacherProgram: (program) => set((state) => ({
         teacherPrograms: [program, ...state.teacherPrograms],
+      })),
+
+      updateTeacherProgram: (programId, updates) => set((state) => ({
+        teacherPrograms: state.teacherPrograms.map((program) =>
+          program.id === programId ? { ...program, ...updates } : program
+        ),
+      })),
+
+      removeTeacherProgram: (programId) => set((state) => ({
+        teacherPrograms: state.teacherPrograms.filter((program) => program.id !== programId),
+        teacherQuizzes: state.teacherQuizzes.filter((quiz) => quiz.teacherProgramId !== programId),
+      })),
+
+      setTeacherQuizzes: (quizzes) => set({ teacherQuizzes: quizzes }),
+
+      addTeacherQuiz: (quiz) => set((state) => ({
+        teacherQuizzes: [quiz, ...state.teacherQuizzes],
+      })),
+
+      updateTeacherQuiz: (quizId, updates) => set((state) => ({
+        teacherQuizzes: state.teacherQuizzes.map((quiz) =>
+          quiz.id === quizId ? { ...quiz, ...updates } : quiz
+        ),
+      })),
+
+      removeTeacherQuiz: (quizId) => set((state) => ({
+        teacherQuizzes: state.teacherQuizzes.filter((quiz) => quiz.id !== quizId),
+      })),
+
+      setTeacherProgramFilters: (filters) => set((state) => ({
+        teacherProgramFilters: {
+          ...state.teacherProgramFilters,
+          ...filters,
+        },
       })),
     }),
     {
