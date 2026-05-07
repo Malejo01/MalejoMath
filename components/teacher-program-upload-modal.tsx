@@ -83,6 +83,15 @@ export function TeacherProgramUploadModal({
     })
   }, [units])
 
+  const saveBlockerMessage = useMemo(() => {
+    if (!subjectName.trim()) return 'Completa el nombre de la materia.'
+    if (!isPedagogyValid) return 'Completa todos los datos pedagogicos obligatorios.'
+    if (!hasValidStructure) return 'Revisa la estructura: cada unidad debe tener temas y cada tema al menos un subtema con nombre.'
+    return null
+  }, [subjectName, isPedagogyValid, hasValidStructure])
+
+  const canSave = !isSaving && !saveBlockerMessage
+
   const resetForm = () => {
     setSubjectName('')
     setPedagogyProfile(defaultPedagogy)
@@ -232,7 +241,8 @@ export function TeacherProgramUploadModal({
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data.error || 'No se pudo extraer el programa')
+        const detailMessage = data?.details ? ` (${data.details})` : ''
+        throw new Error(`${data.error || 'No se pudo extraer el programa'}${detailMessage}`)
       }
 
       if (Array.isArray(data.units) && data.units.length > 0) {
@@ -257,18 +267,8 @@ export function TeacherProgramUploadModal({
   }
 
   const handleSave = async () => {
-    if (!subjectName.trim()) {
-      toast({ title: 'Falta materia', description: 'Debes ingresar el nombre de la materia.' })
-      return
-    }
-
-    if (!isPedagogyValid) {
-      toast({ title: 'Faltan datos pedagogicos', description: 'Completa nivel, carrera, ano, complejidad, enfoque y metodologia.' })
-      return
-    }
-
-    if (!hasValidStructure) {
-      toast({ title: 'Estructura incompleta', description: 'Completa unidades, temas y subtemas antes de guardar.' })
+    if (saveBlockerMessage) {
+      toast({ title: 'No se puede guardar aun', description: saveBlockerMessage })
       return
     }
 
@@ -290,7 +290,8 @@ export function TeacherProgramUploadModal({
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data.error || 'No se pudo guardar el programa')
+        const detailMessage = data?.details ? ` (${data.details})` : ''
+        throw new Error(`${data.error || 'No se pudo guardar el programa'}${detailMessage}`)
       }
 
       onProgramCreated({
@@ -498,11 +499,14 @@ export function TeacherProgramUploadModal({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="button" onClick={handleSave} disabled={isSaving}>
+            <Button type="button" onClick={handleSave} disabled={!canSave}>
               {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Guardar programa
             </Button>
           </div>
+          {saveBlockerMessage && (
+            <p className="text-sm text-amber-700">{saveBlockerMessage}</p>
+          )}
         </div>
       </DialogContent>
     </Dialog>

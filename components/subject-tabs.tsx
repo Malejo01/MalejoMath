@@ -41,6 +41,9 @@ export function SubjectTabs({ subjects, activeSubject, onSelect }: SubjectTabsPr
   return (
     <div className="flex justify-between gap-2 pb-2 scrollbar-hide">
       {subjects.map((subject) => {
+        const subjectName = typeof subject.name === 'string' && subject.name.trim().length > 0
+          ? subject.name
+          : 'Materia'
         const Icon = iconMap[subject.icon as keyof typeof iconMap] || BookOpen
         const isActive = activeSubject === subject.id
         const colors = colorConfig[subject.id as keyof typeof colorConfig] || colorConfig.algebra
@@ -70,7 +73,7 @@ export function SubjectTabs({ subjects, activeSubject, onSelect }: SubjectTabsPr
               <Icon className={cn('w-5 h-5', isActive ? colors.iconActive : colors.icon)} />
             </div>
             <span className="text-xs font-bold truncate w-full text-center">
-              {subject.name.split(' ')[0]}
+              {subjectName.split(' ')[0]}
             </span>
             <div className="w-full h-1.5 bg-white/30 rounded-full overflow-hidden">
               <div 

@@ -17,6 +17,33 @@ import { useAuth } from '@clerk/nextjs'
 import { TeacherProgramUploadModal } from './teacher-program-upload-modal'
 import type { TeacherProgram } from '@/lib/types'
 
+type TeacherProgramApiShape = TeacherProgram & {
+  user_id?: string
+  subject_name?: string
+  pedagogy_profile?: TeacherProgram['pedagogyProfile']
+  source_file_name?: string | null
+  created_at?: string
+}
+
+function normalizeTeacherProgram(program: TeacherProgramApiShape): TeacherProgram {
+  return {
+    id: Number(program.id),
+    userId: program.userId ?? program.user_id ?? '',
+    subjectName: program.subjectName ?? program.subject_name ?? 'Materia docente',
+    pedagogyProfile: program.pedagogyProfile ?? program.pedagogy_profile ?? {
+      level: 'No especificado',
+      degree: 'No especificado',
+      academicYear: 'No especificado',
+      complexity: 'No especificado',
+      assessmentStyle: 'mixto',
+      methodology: 'No especificado',
+    },
+    units: Array.isArray(program.units) ? program.units : [],
+    sourceFileName: program.sourceFileName ?? program.source_file_name ?? null,
+    createdAt: program.createdAt ?? program.created_at ?? new Date().toISOString(),
+  }
+}
+
 export function Dashboard() {
   const { userProgress, userProfile, teacherPrograms, clearSelectedTopics, setSelectedSubject, setTeacherPrograms, addTeacherProgram } = useAppStore()
   const { isSignedIn } = useAuth()
@@ -48,7 +75,10 @@ export function Dashboard() {
           return
         }
 
-        setTeacherPrograms((data.programs || []) as TeacherProgram[])
+        const normalizedPrograms = (Array.isArray(data.programs) ? data.programs : [])
+          .map((program) => normalizeTeacherProgram(program as TeacherProgramApiShape))
+
+        setTeacherPrograms(normalizedPrograms)
       } catch {
         if (isMounted) {
           setTeacherPrograms([])

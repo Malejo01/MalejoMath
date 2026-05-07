@@ -52,17 +52,26 @@ export function pedagogyProfileToContext(profile: PedagogyProfile): string {
 }
 
 export function teacherProgramToSubject(program: TeacherProgram): Subject {
-  const normalizedUnits = normalizeUnits(program.units)
+  const id = Number((program as TeacherProgram & { id?: number | string }).id) || 0
+  const subjectName =
+    (program as TeacherProgram & { subject_name?: string }).subjectName ||
+    (program as TeacherProgram & { subject_name?: string }).subject_name ||
+    'Materia docente'
+  const pedagogyProfile =
+    (program as TeacherProgram & { pedagogy_profile?: PedagogyProfile }).pedagogyProfile ||
+    (program as TeacherProgram & { pedagogy_profile?: PedagogyProfile }).pedagogy_profile
+
+  const normalizedUnits = normalizeUnits((program as TeacherProgram & { units: ProgramUnit[] | unknown }).units)
 
   return {
-    id: `teacher-${program.id}`,
-    name: program.subjectName,
+    id: `teacher-${id}`,
+    name: subjectName,
     icon: 'teacher',
     color: 'teacher',
     progress: 0,
     source: 'teacher',
-    programId: program.id,
-    pedagogyProfile: program.pedagogyProfile,
+    programId: id,
+    pedagogyProfile,
     units: normalizedUnits.map((unit) => ({
       id: unit.id,
       name: unit.name,
