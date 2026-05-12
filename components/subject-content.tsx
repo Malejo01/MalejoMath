@@ -258,6 +258,11 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       )}
 
       {/* Units List */}
+      <div className="space-y-1">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Elegir temas para el cuestionario</h3>
+        <p className="text-sm text-muted-foreground">Selecciona los temas que quieras incluir en la generacion.</p>
+      </div>
+
       <div className="space-y-6">
         {subject.units.map((unit, unitIndex) => {
           const groupedTopics = unit.topics.reduce<{ group: string; topics: Topic[] }[]>((acc, topic) => {

@@ -1,14 +1,21 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Manrope } from 'next/font/google'
+import { Playfair_Display } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { esES } from '@clerk/localizations'
 import './globals.css'
 
-const inter = Inter({ 
+const manrope = Manrope({ 
   subsets: ["latin"],
-  variable: "--font-inter"
+  variable: "--font-manrope"
 });
+
+const playfair = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-playfair',
+  weight: ['600', '700'],
+})
 
 export const metadata: Metadata = {
   title: 'Malejo Math - Aprende Matemáticas',
@@ -48,7 +55,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className="bg-background">
-      <body className={`${inter.variable} font-sans antialiased min-h-screen`}>
+      <body className={`${manrope.variable} ${playfair.variable} font-sans antialiased min-h-screen`}>
         <ClerkProvider localization={esES}>
           {children}
           {process.env.NODE_ENV === 'production' && <Analytics />}

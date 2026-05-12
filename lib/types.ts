@@ -42,6 +42,7 @@ export interface QuizConfig {
   mode: 'teorico' | 'practico'
   questionCount: number
   pedagogyContext?: string
+  previewOnly?: boolean
 }
 
 export interface Answer {

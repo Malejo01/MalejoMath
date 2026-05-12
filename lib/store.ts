@@ -43,8 +43,10 @@ interface AppState {
   toggleTopic: (topicId: string, topicName: string) => void
   clearSelectedTopics: () => void
   startQuiz: (config: QuizConfig, questions: Question[]) => void
+  startQuizPreview: (config: QuizConfig, questions: Question[]) => void
   answerQuestion: (answer: Answer) => void
   nextQuestion: () => void
+  previousQuestion: () => void
   finishQuiz: () => QuizResult
   updateStreak: (passed: boolean) => void
   updateSubjectAverage: (subject: string, score: number) => void
@@ -153,6 +155,17 @@ export const useAppStore = create<AppState>()(
         },
         activeView: 'quiz'
       }),
+
+      startQuizPreview: (config, questions) => set({
+        currentQuiz: {
+          config: { ...config, previewOnly: true },
+          questions,
+          currentIndex: 0,
+          answers: [],
+          startedAt: null
+        },
+        activeView: 'quiz'
+      }),
       
       answerQuestion: (answer) => set((state) => ({
         currentQuiz: {
@@ -165,6 +178,13 @@ export const useAppStore = create<AppState>()(
         currentQuiz: {
           ...state.currentQuiz,
           currentIndex: state.currentQuiz.currentIndex + 1
+        }
+      })),
+
+      previousQuestion: () => set((state) => ({
+        currentQuiz: {
+          ...state.currentQuiz,
+          currentIndex: Math.max(0, state.currentQuiz.currentIndex - 1)
         }
       })),
       
