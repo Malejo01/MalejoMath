@@ -32,28 +32,39 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url)
-    const programId = Number(searchParams.get('programId') || '0')
+    const rawProgramId = searchParams.get('programId')
+    const hasProgramFilter = rawProgramId !== null && rawProgramId.trim().length > 0
+    const programId = hasProgramFilter ? Number(rawProgramId) : Number.NaN
+    const subjectFilter = searchParams.get('subject')?.trim().toLowerCase() || ''
     const modeFilter = searchParams.get('mode')
     const createdAfter = searchParams.get('createdAfter')
 
-    if (!Number.isFinite(programId) || programId <= 0) {
-      return NextResponse.json({ quizzes: [] })
+    if (hasProgramFilter && (!Number.isFinite(programId) || programId <= 0)) {
+      return NextResponse.json({ error: 'programId invalido' }, { status: 400 })
     }
 
-    const rows = await sql`
-      SELECT id, user_id, teacher_program_id, title, subject_name, mode, status, selected_topics, question_count, questions, pedagogy_context, created_at, updated_at
-      FROM teacher_quizzes
-      WHERE user_id = ${userId} AND teacher_program_id = ${programId}
-      ORDER BY created_at DESC
-    `
+    const rows = hasProgramFilter
+      ? await sql`
+          SELECT id, user_id, teacher_program_id, title, subject_name, mode, status, selected_topics, question_count, questions, pedagogy_context, created_at, updated_at
+          FROM teacher_quizzes
+          WHERE user_id = ${userId} AND teacher_program_id = ${programId}
+          ORDER BY created_at DESC
+        `
+      : await sql`
+          SELECT id, user_id, teacher_program_id, title, subject_name, mode, status, selected_topics, question_count, questions, pedagogy_context, created_at, updated_at
+          FROM teacher_quizzes
+          WHERE user_id = ${userId}
+          ORDER BY created_at DESC
+        `
 
     const filteredRows = rows.filter((quiz) => {
       const matchesMode = !modeFilter || modeFilter.length === 0 || quiz.mode === modeFilter
+      const matchesSubject = subjectFilter.length === 0 || String(quiz.subject_name || '').toLowerCase().includes(subjectFilter)
       const createdAtTime = new Date(quiz.created_at).getTime()
       const createdAfterTime = createdAfter ? new Date(createdAfter).getTime() : Number.NaN
       const matchesDate = Number.isNaN(createdAfterTime) || createdAtTime >= createdAfterTime
 
-      return matchesMode && matchesDate
+      return matchesMode && matchesSubject && matchesDate
     })
 
     return NextResponse.json({ quizzes: filteredRows })

@@ -10,7 +10,7 @@ import { useAppStore } from '@/lib/store'
 import { QuizModeDialog } from './quiz-mode-dialog'
 import { pedagogyProfileToContext } from '@/lib/teacher-programs'
 import { QuizActionDialog } from './quiz-action-dialog'
-import type { Question, QuizActionMode } from '@/lib/types'
+import type { ProgramUnit, Question, QuizActionMode, SubjectColorName, SubjectIconName } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
 
 interface SubjectContentProps {
@@ -66,6 +66,88 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   )
   const progressPercentage = totalTopics > 0 ? (completedTopics / totalTopics) * 100 : 0
 
+  const exampleAppearanceMap: Record<string, { iconName: SubjectIconName; colorName: SubjectColorName }> = {
+    algebra: { iconName: 'sigma', colorName: 'blue' },
+    analisis: { iconName: 'chart-line', colorName: 'green' },
+    probabilidad: { iconName: 'pie-chart', colorName: 'amber' },
+  }
+
+  const toProgramUnits = (): ProgramUnit[] => {
+    return subject.units.map((unit, unitIndex) => ({
+      id: unit.id || `u-${unitIndex + 1}`,
+      name: unit.name,
+      topics: unit.topics.reduce((acc, topic, topicIndex) => {
+        const groupName = topic.group || topic.name
+        const existing = acc.find((group) => group.name === groupName)
+
+        const subtopic = {
+          id: topic.id,
+          name: topic.name,
+        }
+
+        if (existing) {
+          existing.subtopics.push(subtopic)
+        } else {
+          acc.push({
+            id: `${unit.id || `u-${unitIndex + 1}`}-t-${topicIndex + 1}`,
+            name: groupName,
+            subtopics: [subtopic],
+          })
+        }
+
+        return acc
+      }, [] as ProgramUnit[number]['topics']),
+    }))
+  }
+
+  const resolveTeacherProgramId = async (): Promise<number> => {
+    if (subject.source === 'teacher' && subject.programId) {
+      return subject.programId
+    }
+
+    const lookupResponse = await fetch(`/api/teacher/programs?name=${encodeURIComponent(subject.name)}`)
+    const lookupData = await lookupResponse.json()
+
+    if (lookupResponse.ok && Array.isArray(lookupData.programs)) {
+      const exactProgram = lookupData.programs.find((program: { subject_name?: string; subjectName?: string; id: number }) => {
+        const currentName = String(program.subjectName || program.subject_name || '').trim().toLowerCase()
+        return currentName === subject.name.trim().toLowerCase()
+      })
+
+      if (exactProgram?.id) {
+        return Number(exactProgram.id)
+      }
+    }
+
+    const appearance = exampleAppearanceMap[subject.id] || { iconName: 'book-open' as SubjectIconName, colorName: 'teal' as SubjectColorName }
+    const createResponse = await fetch('/api/teacher/programs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subjectName: subject.name,
+        iconName: appearance.iconName,
+        colorName: appearance.colorName,
+        units: toProgramUnits(),
+        pedagogyProfile: {
+          level: 'Universitario',
+          degree: 'General',
+          academicYear: 'No especificado',
+          complexity: 'Intermedio',
+          assessmentStyle: 'mixto',
+          methodology: 'Generado desde materia ejemplo',
+        },
+      }),
+    })
+
+    const createData = await createResponse.json()
+    if (!createResponse.ok || !createData?.program?.id) {
+      const details = createData?.details ? ` (${createData.details})` : ''
+      throw new Error(`${createData?.error || 'No se pudo preparar la materia para guardar cuestionarios'}${details}`)
+    }
+
+    return Number(createData.program.id)
+  }
+
   const generateQuestions = async (mode: 'teorico' | 'practico'): Promise<Question[] | null> => {
     if (selectedTopics.length === 0) return null
 
@@ -105,16 +187,13 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     questions: Question[]
     status: 'saved' | 'pending_share'
   }) => {
-    if (subject.source !== 'teacher' || !subject.programId) {
-      toast({ title: 'Disponible solo para materias docentes', description: 'Guarda o comparte usando una materia creada por docente.' })
-      return
-    }
+    const teacherProgramId = await resolveTeacherProgramId()
 
     const response = await fetch('/api/teacher/quizzes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        teacherProgramId: subject.programId,
+        teacherProgramId,
         title: `${subject.name} - ${mode === 'teorico' ? 'Teorico' : 'Practico'} - ${new Date().toLocaleDateString('es-AR')}`,
         subjectName: subject.name,
         mode,

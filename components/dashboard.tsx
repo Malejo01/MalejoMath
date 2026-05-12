@@ -143,7 +143,9 @@ export function Dashboard() {
   const [showOnlyMySubjects, setShowOnlyMySubjects] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [showExamples, setShowExamples] = useState(false)
-  const [showMyQuizzes, setShowMyQuizzes] = useState(false)
+  const [showCreateExamples, setShowCreateExamples] = useState(false)
+  const [showQuizExamples, setShowQuizExamples] = useState(false)
+  const [quizSubjectFilter, setQuizSubjectFilter] = useState<string>('all')
   const [teacherSection, setTeacherSection] = useState<'materias' | 'crear' | 'cuestionarios'>('materias')
   const [performedQuizzes, setPerformedQuizzes] = useState<Record<string, unknown>[]>([])
   const [expandedQuizId, setExpandedQuizId] = useState<number | null>(null)
@@ -204,7 +206,7 @@ export function Dashboard() {
   const selectedSubject = (isTeacher ? teacherAvailableSubjects : studentSubjects).find((subject) => subject.id === activeSubject)
 
   useEffect(() => {
-    if (!isTeacher || !selectedSubject?.programId) {
+    if (!isTeacher) {
       setTeacherQuizzes([])
       setPerformedQuizzes([])
       return
@@ -215,13 +217,44 @@ export function Dashboard() {
     const loadSubjectQuizzes = async () => {
       try {
         const quizzesQuery = new URLSearchParams()
-        quizzesQuery.set('programId', String(selectedSubject.programId))
         if (teacherProgramFilters.mode) quizzesQuery.set('mode', teacherProgramFilters.mode)
         if (teacherProgramFilters.createdAfter) quizzesQuery.set('createdAfter', teacherProgramFilters.createdAfter)
 
+        if (teacherSection !== 'cuestionarios' && selectedSubject?.programId) {
+          quizzesQuery.set('programId', String(selectedSubject.programId))
+        } else if (teacherSection === 'cuestionarios' && quizSubjectFilter.startsWith('teacher-')) {
+          quizzesQuery.set('programId', quizSubjectFilter.replace('teacher-', ''))
+        } else if (teacherSection === 'cuestionarios' && quizSubjectFilter !== 'all') {
+          const filteredExample = subjects.find((subject) => subject.id === quizSubjectFilter)
+          if (filteredExample) {
+            quizzesQuery.set('subject', filteredExample.name)
+          }
+        }
+
+        const historyQuery = new URLSearchParams()
+        if (teacherProgramFilters.mode) historyQuery.set('mode', teacherProgramFilters.mode)
+        if (teacherProgramFilters.createdAfter) historyQuery.set('createdAfter', teacherProgramFilters.createdAfter)
+
+        if (teacherSection !== 'cuestionarios' && selectedSubject?.programId) {
+          historyQuery.set('subject', selectedSubject.name)
+        } else if (teacherSection === 'cuestionarios' && quizSubjectFilter !== 'all') {
+          if (quizSubjectFilter.startsWith('teacher-')) {
+            const teacherProgramId = Number(quizSubjectFilter.replace('teacher-', ''))
+            const filteredProgram = teacherPrograms.find((program) => program.id === teacherProgramId)
+            if (filteredProgram) {
+              historyQuery.set('subject', filteredProgram.subjectName)
+            }
+          } else {
+            const filteredExample = subjects.find((subject) => subject.id === quizSubjectFilter)
+            if (filteredExample) {
+              historyQuery.set('subject', filteredExample.name)
+            }
+          }
+        }
+
         const [savedRes, historyRes] = await Promise.all([
           fetch(`/api/teacher/quizzes?${quizzesQuery.toString()}`),
-          fetch(`/api/quiz/history?subject=${encodeURIComponent(selectedSubject.name)}&mode=${encodeURIComponent(teacherProgramFilters.mode)}&createdAfter=${encodeURIComponent(teacherProgramFilters.createdAfter)}`),
+          fetch(`/api/quiz/history?${historyQuery.toString()}`),
         ])
 
         const savedData = await savedRes.json()
@@ -256,7 +289,15 @@ export function Dashboard() {
     return () => {
       isMounted = false
     }
-  }, [isTeacher, selectedSubject?.programId, selectedSubject?.name, teacherProgramFilters.mode, teacherProgramFilters.createdAfter, setTeacherQuizzes])
+  }, [isTeacher, teacherSection, quizSubjectFilter, selectedSubject?.programId, selectedSubject?.name, teacherProgramFilters.mode, teacherProgramFilters.createdAfter, teacherPrograms, setTeacherQuizzes])
+
+  useEffect(() => {
+    if (quizSubjectFilter === 'all' || !quizSubjectFilter.startsWith('teacher-')) return
+    const teacherProgramId = Number(quizSubjectFilter.replace('teacher-', ''))
+    if (!teacherPrograms.some((program) => program.id === teacherProgramId)) {
+      setQuizSubjectFilter('all')
+    }
+  }, [quizSubjectFilter, teacherPrograms])
 
   const handleSubjectChange = (subjectId: string | null) => {
     setActiveSubject(subjectId)
@@ -692,7 +733,7 @@ export function Dashboard() {
                 <Card className="p-4 rounded-2xl border border-border/60 bg-card/75 backdrop-blur-md shadow-[0_6px_30px_rgba(23,23,23,0.06)] space-y-4">
                   <div className="space-y-3">
                     <h2 className="text-lg font-bold">Paso 1: Selecciona una materia</h2>
-                    <p className="text-sm text-muted-foreground">Elige una de tus materias para comenzar a crear el cuestionario.</p>
+                    <p className="text-sm text-muted-foreground">Elige una de tus materias o una materia de ejemplo para comenzar a crear el cuestionario.</p>
 
                     {teacherPrograms.length === 0 && (
                       <div className="space-y-2">
@@ -709,9 +750,27 @@ export function Dashboard() {
                         {teacherPrograms.map((program) => renderTeacherProgramCard(program))}
                       </div>
                     )}
+
+                    <div className="space-y-2 pt-1">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowCreateExamples((prev) => !prev)}
+                      >
+                        {showCreateExamples ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
+                        Ejemplos de materias
+                      </Button>
+
+                      {showCreateExamples && (
+                        <SubjectTabs
+                          subjects={subjects}
+                          activeSubject={activeSubject}
+                          onSelect={(subjectId) => handleSubjectChange(subjectId)}
+                        />
+                      )}
+                    </div>
                   </div>
 
-                  {selectedSubject?.source === 'teacher' && (
+                  {selectedSubject && (
                     <div className="space-y-3 border-t pt-4">
                       <h2 className="text-lg font-bold">Paso 2: Elegir temas para el cuestionario</h2>
                       <SubjectContent subject={selectedSubject} />
@@ -722,87 +781,105 @@ export function Dashboard() {
 
               {teacherSection === 'cuestionarios' && (
                 <Card className="p-4 rounded-2xl border border-border/60 bg-card/75 backdrop-blur-md shadow-[0_6px_30px_rgba(23,23,23,0.06)] space-y-3">
-                  {!activeTeacherProgram && (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Selecciona una materia de Mis materias para ver sus cuestionarios.</p>
-                      <Button variant="outline" onClick={() => setTeacherSection('materias')}>Elegir materia</Button>
-                    </div>
-                  )}
-
-                  {activeTeacherProgram && (
-                    <>
-                      <div className="flex items-center justify-between gap-2">
-                        <h2 className="font-bold">{activeTeacherProgram.subjectName}</h2>
-                        <Button variant="outline" onClick={() => setShowMyQuizzes((prev) => !prev)}>
-                          {showMyQuizzes ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                          Mis cuestionarios
+                  <div className="space-y-2">
+                    <h2 className="font-bold">Mis cuestionarios</h2>
+                    <p className="text-sm text-muted-foreground">Se muestran todos tus cuestionarios. Usa el filtro para ver una materia puntual.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant={quizSubjectFilter === 'all' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setQuizSubjectFilter('all')}
+                      >
+                        Todas las materias
+                      </Button>
+                      {teacherPrograms.map((program) => (
+                        <Button
+                          key={program.id}
+                          variant={quizSubjectFilter === `teacher-${program.id}` ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setQuizSubjectFilter(`teacher-${program.id}`)}
+                        >
+                          {program.subjectName}
                         </Button>
-                      </div>
+                      ))}
+                    </div>
 
-                      {showMyQuizzes && (
-                        <Tabs defaultValue="guardados">
-                          <TabsList>
-                            <TabsTrigger value="guardados">Guardados ({teacherQuizzes.length})</TabsTrigger>
-                            <TabsTrigger value="realizados">Realizados ({performedQuizzes.length})</TabsTrigger>
-                          </TabsList>
-                          <TabsContent value="guardados" className="space-y-2">
-                            {teacherQuizzes.length === 0 && <p className="text-sm text-muted-foreground">No hay cuestionarios guardados para esta materia.</p>}
-                            {teacherQuizzes.map((quiz) => (
-                              <Card key={quiz.id} className="p-3 border">
-                                <div className="space-y-2">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                      <p className="font-semibold">{quiz.title}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {quiz.mode} | {quiz.questionCount} preguntas | {quiz.status === 'pending_share' ? 'PENDIENTE_COMPARTIR' : 'GUARDADO'}
-                                      </p>
-                                    </div>
-                                    <Button size="sm" variant="ghost" onClick={() => setExpandedQuizId((prev) => (prev === quiz.id ? null : quiz.id))}>
-                                      <Eye className="w-4 h-4 mr-1" />
-                                      Ver detalle
-                                    </Button>
-                                  </div>
+                    <div className="pt-1 space-y-2">
+                      <Button variant="outline" size="sm" onClick={() => setShowQuizExamples((prev) => !prev)}>
+                        {showQuizExamples ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
+                        Ejemplos de materias
+                      </Button>
 
-                                  {expandedQuizId === quiz.id && (
-                                    <div className="space-y-1 text-sm bg-muted/40 rounded-md p-2">
-                                      <p><strong>Temas:</strong> {quiz.selectedTopics.map((topic) => topic.name).join(', ') || 'Sin temas'}</p>
-                                      <p><strong>Creado:</strong> {new Date(quiz.createdAt).toLocaleString('es-AR')}</p>
-                                    </div>
-                                  )}
-
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button size="sm" variant="outline" onClick={() => handlePreviewQuiz(quiz)}>
-                                      <Eye className="w-4 h-4 mr-1" />
-                                      Previsualizar
-                                    </Button>
-                                    <Button size="sm" onClick={() => handleRunQuiz(quiz)}>
-                                      <PlayCircle className="w-4 h-4 mr-1" />
-                                      Realizar
-                                    </Button>
-                                    <Button size="sm" variant="destructive" onClick={() => handleDeleteQuiz(quiz.id)}>
-                                      <Trash2 className="w-4 h-4 mr-1" />
-                                      Eliminar
-                                    </Button>
-                                  </div>
-                                </div>
-                              </Card>
-                            ))}
-                          </TabsContent>
-                          <TabsContent value="realizados" className="space-y-2">
-                            {performedQuizzes.length === 0 && <p className="text-sm text-muted-foreground">No hay cuestionarios realizados para esta materia.</p>}
-                            {performedQuizzes.map((attempt) => (
-                              <Card key={String(attempt.id)} className="p-3 border">
-                                <p className="font-semibold">{String(attempt.subject)}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {String(attempt.mode)} | Nota: {String(attempt.score)} | Fecha: {new Date(String(attempt.completed_at)).toLocaleString('es-AR')}
-                                </p>
-                              </Card>
-                            ))}
-                          </TabsContent>
-                        </Tabs>
+                      {showQuizExamples && (
+                        <SubjectTabs
+                          subjects={subjects}
+                          activeSubject={quizSubjectFilter === 'all' || quizSubjectFilter.startsWith('teacher-') ? null : quizSubjectFilter}
+                          onSelect={(subjectId) => setQuizSubjectFilter(subjectId)}
+                        />
                       )}
-                    </>
-                  )}
+                    </div>
+                  </div>
+
+                  <Tabs defaultValue="guardados">
+                    <TabsList>
+                      <TabsTrigger value="guardados">Guardados ({teacherQuizzes.length})</TabsTrigger>
+                      <TabsTrigger value="realizados">Realizados ({performedQuizzes.length})</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="guardados" className="space-y-2">
+                      {teacherQuizzes.length === 0 && <p className="text-sm text-muted-foreground">No hay cuestionarios guardados para este filtro.</p>}
+                      {teacherQuizzes.map((quiz) => (
+                        <Card key={quiz.id} className="p-3 border">
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-semibold">{quiz.title}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {quiz.subjectName} | {quiz.mode} | {quiz.questionCount} preguntas | {quiz.status === 'pending_share' ? 'PENDIENTE_COMPARTIR' : 'GUARDADO'}
+                                </p>
+                              </div>
+                              <Button size="sm" variant="ghost" onClick={() => setExpandedQuizId((prev) => (prev === quiz.id ? null : quiz.id))}>
+                                <Eye className="w-4 h-4 mr-1" />
+                                Ver detalle
+                              </Button>
+                            </div>
+
+                            {expandedQuizId === quiz.id && (
+                              <div className="space-y-1 text-sm bg-muted/40 rounded-md p-2">
+                                <p><strong>Temas:</strong> {quiz.selectedTopics.map((topic) => topic.name).join(', ') || 'Sin temas'}</p>
+                                <p><strong>Creado:</strong> {new Date(quiz.createdAt).toLocaleString('es-AR')}</p>
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" variant="outline" onClick={() => handlePreviewQuiz(quiz)}>
+                                <Eye className="w-4 h-4 mr-1" />
+                                Previsualizar
+                              </Button>
+                              <Button size="sm" onClick={() => handleRunQuiz(quiz)}>
+                                <PlayCircle className="w-4 h-4 mr-1" />
+                                Realizar
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => handleDeleteQuiz(quiz.id)}>
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Eliminar
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </TabsContent>
+                    <TabsContent value="realizados" className="space-y-2">
+                      {performedQuizzes.length === 0 && <p className="text-sm text-muted-foreground">No hay cuestionarios realizados para este filtro.</p>}
+                      {performedQuizzes.map((attempt) => (
+                        <Card key={String(attempt.id)} className="p-3 border">
+                          <p className="font-semibold">{String(attempt.subject)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {String(attempt.mode)} | Nota: {String(attempt.score)} | Fecha: {new Date(String(attempt.completed_at)).toLocaleString('es-AR')}
+                          </p>
+                        </Card>
+                      ))}
+                    </TabsContent>
+                  </Tabs>
                 </Card>
               )}
             </div>
