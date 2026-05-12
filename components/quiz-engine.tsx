@@ -4,11 +4,21 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { X, ChevronRight, Check, AlertCircle, Lightbulb, Loader2 } from 'lucide-react'
+import { X, ChevronRight, ChevronLeft, Check, AlertCircle, Lightbulb, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { LaTeXRenderer } from './latex-renderer'
 import { MathBackground } from './math-background'
 import { cn } from '@/lib/utils'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 type AnswerState = {
   selected: number | null
@@ -17,7 +27,7 @@ type AnswerState = {
 }
 
 export function QuizEngine() {
-  const { currentQuiz, answerQuestion, nextQuestion, setActiveView, finishQuiz } = useAppStore()
+  const { currentQuiz, answerQuestion, nextQuestion, previousQuestion, setActiveView, finishQuiz, updateQuestions } = useAppStore()
   const [answerState, setAnswerState] = useState<AnswerState>({
     selected: null,
     submitted: false,
@@ -25,18 +35,102 @@ export function QuizEngine() {
   })
   const [detailedExplanation, setDetailedExplanation] = useState<string | null>(null)
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false)
+  const [isEditingQuestion, setIsEditingQuestion] = useState(false)
+  const [questionDraft, setQuestionDraft] = useState('')
+  const [optionsDraft, setOptionsDraft] = useState<string[]>([])
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'exit' | 'next' | 'prev' | 'cancel-edit' | null>(null)
 
   const { questions, currentIndex, config } = currentQuiz
   const currentQuestion = questions[currentIndex]
-  const progress = ((currentIndex + (answerState.submitted ? 1 : 0)) / questions.length) * 100
+  const isPreviewMode = Boolean(config?.previewOnly)
+  const progress = isPreviewMode
+    ? ((currentIndex + 1) / questions.length) * 100
+    : ((currentIndex + (answerState.submitted ? 1 : 0)) / questions.length) * 100
   const isLastQuestion = currentIndex === questions.length - 1
+  const isFirstQuestion = currentIndex === 0
+
+  const hasUnsavedPreviewChanges =
+    isPreviewMode &&
+    isEditingQuestion &&
+    currentQuestion &&
+    (questionDraft !== currentQuestion.question ||
+      optionsDraft.length !== currentQuestion.options.length ||
+      optionsDraft.some((option, index) => option !== currentQuestion.options[index]))
+
+  const requestOrRunAction = useCallback((action: 'exit' | 'next' | 'prev' | 'cancel-edit', run: () => void) => {
+    if (hasUnsavedPreviewChanges) {
+      setPendingAction(action)
+      setShowUnsavedDialog(true)
+      return
+    }
+
+    run()
+  }, [hasUnsavedPreviewChanges])
+
+  const applyPendingAction = useCallback((action: 'exit' | 'next' | 'prev' | 'cancel-edit' | null) => {
+    if (!action) return
+
+    if (action === 'exit') {
+      setIsEditingQuestion(false)
+      setActiveView('dashboard')
+      return
+    }
+
+    if (action === 'next') {
+      setIsEditingQuestion(false)
+      if (!isLastQuestion) {
+        nextQuestion()
+      }
+      return
+    }
+
+    if (action === 'prev') {
+      setIsEditingQuestion(false)
+      if (!isFirstQuestion) {
+        previousQuestion()
+      }
+      return
+    }
+
+    if (action === 'cancel-edit') {
+      setIsEditingQuestion(false)
+      return
+    }
+  }, [isFirstQuestion, isLastQuestion, nextQuestion, previousQuestion, setActiveView])
+
+  const handleStartEditQuestion = useCallback(() => {
+    if (!isPreviewMode || !currentQuestion) return
+    setQuestionDraft(currentQuestion.question)
+    setOptionsDraft([...currentQuestion.options])
+    setIsEditingQuestion(true)
+  }, [isPreviewMode, currentQuestion])
+
+  const handleSaveEditedQuestion = useCallback(() => {
+    if (!isPreviewMode || !currentQuestion) return
+
+    const nextQuestions = questions.map((question, index) => (
+      index === currentIndex
+        ? { ...question, question: questionDraft, options: [...optionsDraft] }
+        : question
+    ))
+
+    updateQuestions(nextQuestions)
+    setIsEditingQuestion(false)
+  }, [isPreviewMode, currentQuestion, questions, currentIndex, questionDraft, optionsDraft, updateQuestions])
+
+  const handleCancelEditQuestion = useCallback(() => {
+    requestOrRunAction('cancel-edit', () => setIsEditingQuestion(false))
+  }, [requestOrRunAction])
 
   const handleSelectAnswer = useCallback((index: number) => {
+    if (isPreviewMode) return
     if (answerState.submitted) return
     setAnswerState(prev => ({ ...prev, selected: index }))
-  }, [answerState.submitted])
+  }, [answerState.submitted, isPreviewMode])
 
   const handleSubmit = useCallback(() => {
+    if (isPreviewMode) return
     if (answerState.selected === null || !currentQuestion) return
     
     const isCorrect = answerState.selected === currentQuestion.correctAnswer
@@ -53,9 +147,19 @@ export function QuizEngine() {
       topicName: currentQuestion.topicName,
       explanation: currentQuestion.explanation
     })
-  }, [answerState.selected, currentQuestion, answerQuestion])
+  }, [answerState.selected, currentQuestion, answerQuestion, isPreviewMode])
 
   const handleNext = useCallback(() => {
+    if (isPreviewMode) {
+      requestOrRunAction('next', () => {
+        setIsEditingQuestion(false)
+        if (!isLastQuestion) {
+          nextQuestion()
+        }
+      })
+      return
+    }
+
     setDetailedExplanation(null)
     
     if (isLastQuestion) {
@@ -65,7 +169,15 @@ export function QuizEngine() {
       nextQuestion()
       setAnswerState({ selected: null, submitted: false, isCorrect: null })
     }
-  }, [isLastQuestion, finishQuiz, nextQuestion, setActiveView])
+  }, [isPreviewMode, isLastQuestion, finishQuiz, nextQuestion, requestOrRunAction, setActiveView])
+
+  const handlePrevious = useCallback(() => {
+    if (!isPreviewMode || isFirstQuestion) return
+    requestOrRunAction('prev', () => {
+      setIsEditingQuestion(false)
+      previousQuestion()
+    })
+  }, [isPreviewMode, isFirstQuestion, previousQuestion, requestOrRunAction])
 
   const handleExplainError = useCallback(async () => {
     if (!currentQuestion || answerState.selected === null) return
@@ -97,10 +209,18 @@ export function QuizEngine() {
   }, [currentQuestion, answerState.selected])
 
   const handleExit = useCallback(() => {
+    if (isPreviewMode) {
+      requestOrRunAction('exit', () => {
+        setIsEditingQuestion(false)
+        setActiveView('dashboard')
+      })
+      return
+    }
+
     if (confirm('Seguro que quieres salir? Perderas tu progreso actual.')) {
       setActiveView('dashboard')
     }
-  }, [setActiveView])
+  }, [isPreviewMode, requestOrRunAction, setActiveView])
 
   if (!currentQuestion) {
     return null
@@ -130,7 +250,9 @@ export function QuizEngine() {
         </div>
         <div className="px-4 pb-3">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            {config?.mode === 'teorico' ? 'Modo Teorico' : 'Modo Practico'} - {currentQuestion.topicName}
+            {isPreviewMode
+              ? `Previsualizacion - ${currentQuestion.topicName}`
+              : `${config?.mode === 'teorico' ? 'Modo Teorico' : 'Modo Practico'} - ${currentQuestion.topicName}`}
           </span>
         </div>
       </header>
@@ -140,9 +262,34 @@ export function QuizEngine() {
         <div className="space-y-5">
           {/* Question */}
           <Card className="p-6 border-2 border-border bg-card/90 backdrop-blur-sm shadow-lg">
-            <h2 className="text-xl font-bold text-foreground leading-relaxed">
-              <LaTeXRenderer content={currentQuestion.question} />
-            </h2>
+            <div className="space-y-4">
+              {isPreviewMode && (
+                <div className="flex flex-wrap gap-2">
+                  {!isEditingQuestion ? (
+                    <Button type="button" variant="outline" onClick={handleStartEditQuestion}>
+                      Editar Pregunta
+                    </Button>
+                  ) : (
+                    <>
+                      <Button type="button" onClick={handleSaveEditedQuestion}>Guardar</Button>
+                      <Button type="button" variant="outline" onClick={handleCancelEditQuestion}>Salir sin guardar</Button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!isPreviewMode || !isEditingQuestion ? (
+                <h2 className="text-xl font-bold text-foreground leading-relaxed">
+                  <LaTeXRenderer content={currentQuestion.question} />
+                </h2>
+              ) : (
+                <textarea
+                  className="w-full min-h-28 border rounded-lg p-3 bg-background text-sm"
+                  value={questionDraft}
+                  onChange={(event) => setQuestionDraft(event.target.value)}
+                />
+              )}
+            </div>
           </Card>
 
           {/* Options */}
@@ -153,20 +300,23 @@ export function QuizEngine() {
               const showCorrect = answerState.submitted && isCorrectAnswer
               const showIncorrect = answerState.submitted && isSelected && !isCorrectAnswer
 
+              const previewOptionValue = isEditingQuestion ? (optionsDraft[index] ?? option) : option
+
               return (
                 <button
                   key={index}
                   onClick={() => handleSelectAnswer(index)}
-                  disabled={answerState.submitted}
+                  disabled={answerState.submitted || (isPreviewMode && !isEditingQuestion)}
                   className={cn(
                     'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200',
                     'touch-manipulation bg-card/80 backdrop-blur-sm',
                     showIncorrect && 'animate-shake',
-                    !answerState.submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md active:scale-[0.98]',
-                    !answerState.submitted && isSelected && 'border-[var(--algebra)] bg-[var(--algebra-light)] shadow-lg shadow-[var(--algebra)]/20',
+                    isPreviewMode && !isEditingQuestion && 'border-border opacity-95 cursor-default',
+                    !isPreviewMode && !answerState.submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md active:scale-[0.98]',
+                    !isPreviewMode && !answerState.submitted && isSelected && 'border-[var(--algebra)] bg-[var(--algebra-light)] shadow-lg shadow-[var(--algebra)]/20',
                     showCorrect && 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg shadow-[var(--analysis)]/20 border-4',
                     showIncorrect && 'border-destructive bg-destructive/10 shadow-lg shadow-destructive/20 border-4',
-                    answerState.submitted && !showCorrect && !showIncorrect && 'border-border opacity-40'
+                    !isPreviewMode && answerState.submitted && !showCorrect && !showIncorrect && 'border-border opacity-40'
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -186,7 +336,21 @@ export function QuizEngine() {
                       )}
                     </div>
                     <span className="flex-1 pt-2.5 font-semibold text-base">
-                      <LaTeXRenderer content={option} className="text-foreground" />
+                      {!isPreviewMode || !isEditingQuestion ? (
+                        <LaTeXRenderer content={previewOptionValue} className="text-foreground" />
+                      ) : (
+                        <input
+                          value={previewOptionValue}
+                          onChange={(event) => {
+                            setOptionsDraft((prev) => {
+                              const next = [...prev]
+                              next[index] = event.target.value
+                              return next
+                            })
+                          }}
+                          className="w-full border rounded-md px-2 py-1 bg-background text-sm"
+                        />
+                      )}
                     </span>
                   </div>
                 </button>
@@ -195,7 +359,7 @@ export function QuizEngine() {
           </div>
 
           {/* Feedback after answer - correct */}
-          {answerState.submitted && answerState.isCorrect && (
+          {!isPreviewMode && answerState.submitted && answerState.isCorrect && (
             <Card className="p-5 border-2 border-[var(--analysis)] bg-[var(--analysis-light)] animate-in fade-in-50 slide-in-from-bottom-4">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[var(--analysis)] flex items-center justify-center shrink-0">
@@ -212,7 +376,7 @@ export function QuizEngine() {
           )}
 
           {/* Feedback after answer - incorrect */}
-          {answerState.submitted && !answerState.isCorrect && (
+          {!isPreviewMode && answerState.submitted && !answerState.isCorrect && (
             <Card className="p-5 border-2 border-destructive bg-destructive/5 animate-in fade-in-50 slide-in-from-bottom-4">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-destructive flex items-center justify-center shrink-0">
@@ -230,7 +394,7 @@ export function QuizEngine() {
           )}
 
           {/* Detailed Explanation Modal */}
-          {detailedExplanation && (
+          {!isPreviewMode && detailedExplanation && (
             <Card className="p-5 border-2 border-[var(--algebra)]/30 bg-[var(--algebra-light)] animate-in fade-in-50 slide-in-from-bottom-4">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[var(--algebra)] flex items-center justify-center shrink-0">
@@ -251,6 +415,28 @@ export function QuizEngine() {
       {/* Fixed Action Button */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/95 backdrop-blur-xl border-t-2 border-border">
         <div className="flex gap-3">
+          {isPreviewMode ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={handlePrevious}
+                disabled={isFirstQuestion}
+                className="flex-1 h-14 rounded-2xl border-2 font-bold gap-2"
+              >
+                <ChevronLeft className="w-5 h-5" />
+                Anterior
+              </Button>
+              <Button
+                onClick={handleNext}
+                disabled={isLastQuestion}
+                className="flex-1 h-14 text-lg font-bold gap-2 rounded-2xl"
+              >
+                Siguiente
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            </>
+          ) : (
+            <>
           {answerState.submitted && !answerState.isCorrect && !detailedExplanation && (
             <Button
               variant="outline"
@@ -300,8 +486,41 @@ export function QuizEngine() {
               <ChevronRight className="w-5 h-5" />
             </Button>
           )}
+            </>
+          )}
         </div>
       </div>
+
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambios sin guardar</AlertDialogTitle>
+            <AlertDialogDescription>
+              Los cambios de esta pregunta no fueron guardados. ¿Continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setPendingAction(null)
+                setShowUnsavedDialog(false)
+              }}
+            >
+              No
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const action = pendingAction
+                setPendingAction(null)
+                setShowUnsavedDialog(false)
+                applyPendingAction(action)
+              }}
+            >
+              Si
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

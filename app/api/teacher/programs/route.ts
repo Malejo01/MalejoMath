@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
-import type { PedagogyProfile, ProgramUnit } from '@/lib/types'
+import type { PedagogyProfile, ProgramUnit, SubjectColorName, SubjectIconName } from '@/lib/types'
 
 function isTeacherRole(role: unknown): role is 'teacher' {
   return role === 'teacher'
@@ -22,7 +22,7 @@ async function requireTeacher(userId: string) {
   return isTeacherRole(rows[0].role)
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const { userId } = await auth()
 
   if (!userId) {
@@ -35,14 +35,44 @@ export async function GET() {
       return NextResponse.json({ programs: [] })
     }
 
-    const programs = await sql`
-      SELECT id, user_id, subject_name, pedagogy_profile, units, source_file_name, created_at
-      FROM teacher_programs
-      WHERE user_id = ${userId} AND status = 'active'
-      ORDER BY created_at DESC
-    `
+    // Try full query first (after migration 003); fall back if icon_name/color_name columns don't exist yet
+    let programs: Awaited<ReturnType<typeof sql>>
+    try {
+      programs = await sql`
+        SELECT id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at
+        FROM teacher_programs
+        WHERE user_id = ${userId} AND status = 'active'
+        ORDER BY created_at DESC
+      `
+    } catch {
+      programs = await sql`
+        SELECT id, user_id, subject_name, pedagogy_profile, units, source_file_name, created_at
+        FROM teacher_programs
+        WHERE user_id = ${userId} AND status = 'active'
+        ORDER BY created_at DESC
+      `
+    }
 
-    return NextResponse.json({ programs })
+    const { searchParams } = new URL(req.url)
+    const nameFilter = searchParams.get('name')?.trim().toLowerCase() || ''
+    const levelFilter = searchParams.get('level')?.trim().toLowerCase() || ''
+    const degreeFilter = searchParams.get('degree')?.trim().toLowerCase() || ''
+    const createdAfter = searchParams.get('createdAfter')?.trim() || ''
+
+    const filteredPrograms = programs.filter((program) => {
+      const pedagogyProfile = (program.pedagogy_profile || {}) as PedagogyProfile
+      const matchesName = nameFilter.length === 0 || String(program.subject_name || '').toLowerCase().includes(nameFilter)
+      const matchesLevel = levelFilter.length === 0 || String(pedagogyProfile.level || '').toLowerCase().includes(levelFilter)
+      const matchesDegree = degreeFilter.length === 0 || String(pedagogyProfile.degree || '').toLowerCase().includes(degreeFilter)
+
+      const createdAtTime = new Date(program.created_at).getTime()
+      const createdAfterTime = createdAfter.length > 0 ? new Date(createdAfter).getTime() : Number.NaN
+      const matchesDate = Number.isNaN(createdAfterTime) || createdAtTime >= createdAfterTime
+
+      return matchesName && matchesLevel && matchesDegree && matchesDate
+    })
+
+    return NextResponse.json({ programs: filteredPrograms })
   } catch (error) {
     return NextResponse.json(
       { error: 'No se pudieron obtener los programas', details: error instanceof Error ? error.message : String(error) },
@@ -71,6 +101,8 @@ export async function POST(req: Request) {
     const sourceFileName = body?.sourceFileName ? String(body.sourceFileName) : null
     const sourceMimeType = body?.sourceMimeType ? String(body.sourceMimeType) : null
     const sourceFileSizeBytes = body?.sourceFileSizeBytes ? Number(body.sourceFileSizeBytes) : null
+    const iconName = (body?.iconName ? String(body.iconName) : 'book-open') as SubjectIconName
+    const colorName = (body?.colorName ? String(body.colorName) : 'teal') as SubjectColorName
 
     if (!subjectName) {
       return NextResponse.json({ error: 'La materia es obligatoria' }, { status: 400 })
@@ -97,6 +129,8 @@ export async function POST(req: Request) {
       INSERT INTO teacher_programs (
         user_id,
         subject_name,
+        icon_name,
+        color_name,
         pedagogy_profile,
         units,
         source_file_name,
@@ -110,6 +144,8 @@ export async function POST(req: Request) {
       VALUES (
         ${userId},
         ${subjectName},
+        ${iconName},
+        ${colorName},
         ${JSON.stringify(pedagogyProfile)},
         ${JSON.stringify(units)},
         ${sourceFileName},
@@ -120,7 +156,7 @@ export async function POST(req: Request) {
         NOW(),
         NOW()
       )
-      RETURNING id, user_id, subject_name, pedagogy_profile, units, source_file_name, created_at
+      RETURNING id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at
     `
 
     return NextResponse.json({ program: rows[0] })

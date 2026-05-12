@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,12 +9,15 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, Plus, Trash2, Upload } from 'lucide-react'
-import type { PedagogyProfile, ProgramUnit, TeacherProgram } from '@/lib/types'
+import type { PedagogyProfile, ProgramUnit, SubjectColorName, SubjectIconName, TeacherProgram } from '@/lib/types'
+import { SUBJECT_COLOR_OPTIONS, SUBJECT_ICON_OPTIONS } from '@/lib/subject-appearance'
 
 interface TeacherProgramUploadModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onProgramCreated: (program: TeacherProgram) => void
+  onProgramUpdated?: (program: TeacherProgram) => void
+  programToEdit?: TeacherProgram | null
 }
 
 const defaultPedagogy: PedagogyProfile = {
@@ -46,9 +49,13 @@ export function TeacherProgramUploadModal({
   open,
   onOpenChange,
   onProgramCreated,
+  onProgramUpdated,
+  programToEdit = null,
 }: TeacherProgramUploadModalProps) {
   const { toast } = useToast()
   const [subjectName, setSubjectName] = useState('')
+  const [iconName, setIconName] = useState<SubjectIconName>('book-open')
+  const [colorName, setColorName] = useState<SubjectColorName>('teal')
   const [pedagogyProfile, setPedagogyProfile] = useState<PedagogyProfile>(defaultPedagogy)
   const [units, setUnits] = useState<ProgramUnit[]>(createInitialUnits())
   const [file, setFile] = useState<File | null>(null)
@@ -91,14 +98,34 @@ export function TeacherProgramUploadModal({
   }, [subjectName, isPedagogyValid, hasValidStructure])
 
   const canSave = !isSaving && !saveBlockerMessage
+  const isEditing = Boolean(programToEdit)
 
   const resetForm = () => {
     setSubjectName('')
+    setIconName('book-open')
+    setColorName('teal')
     setPedagogyProfile(defaultPedagogy)
     setUnits(createInitialUnits())
     setFile(null)
     setSourceMeta(null)
   }
+
+  useEffect(() => {
+    if (!open) return
+
+    if (programToEdit) {
+      setSubjectName(programToEdit.subjectName)
+      setIconName(programToEdit.iconName)
+      setColorName(programToEdit.colorName)
+      setPedagogyProfile(programToEdit.pedagogyProfile)
+      setUnits(programToEdit.units)
+      setFile(null)
+      setSourceMeta(null)
+      return
+    }
+
+    resetForm()
+  }, [open, programToEdit])
 
   const updateUnitName = (unitIndex: number, value: string) => {
     setUnits((prev) => prev.map((unit, index) => (index === unitIndex ? { ...unit, name: value } : unit)))
@@ -275,18 +302,23 @@ export function TeacherProgramUploadModal({
     setIsSaving(true)
 
     try {
-      const response = await fetch('/api/teacher/programs', {
-        method: 'POST',
+      const response = await fetch(
+        isEditing ? `/api/teacher/programs/${programToEdit?.id}` : '/api/teacher/programs',
+        {
+        method: isEditing ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subjectName,
+          iconName,
+          colorName,
           pedagogyProfile,
           units,
           sourceFileName: sourceMeta?.sourceFileName ?? null,
           sourceMimeType: sourceMeta?.sourceMimeType ?? null,
           sourceFileSizeBytes: sourceMeta?.sourceFileSizeBytes ?? null,
         }),
-      })
+      }
+      )
 
       const data = await response.json()
       if (!response.ok) {
@@ -294,17 +326,30 @@ export function TeacherProgramUploadModal({
         throw new Error(`${data.error || 'No se pudo guardar el programa'}${detailMessage}`)
       }
 
-      onProgramCreated({
+      const normalizedProgram: TeacherProgram = {
         id: data.program.id,
         userId: data.program.user_id,
         subjectName: data.program.subject_name,
+        iconName: data.program.icon_name || iconName,
+        colorName: data.program.color_name || colorName,
         pedagogyProfile: data.program.pedagogy_profile,
         units: data.program.units,
         sourceFileName: data.program.source_file_name,
         createdAt: data.program.created_at,
-      })
+      }
 
-      toast({ title: 'Programa guardado', description: 'La materia docente ya esta disponible para generar cuestionarios.' })
+      if (isEditing && onProgramUpdated) {
+        onProgramUpdated(normalizedProgram)
+      } else {
+        onProgramCreated(normalizedProgram)
+      }
+
+      toast({
+        title: isEditing ? 'Programa actualizado' : 'Programa guardado',
+        description: isEditing
+          ? 'Se actualizaron los datos de la materia docente.'
+          : 'La materia docente ya esta disponible para generar cuestionarios.'
+      })
       onOpenChange(false)
       resetForm()
     } catch (error) {
@@ -318,9 +363,11 @@ export function TeacherProgramUploadModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Subir Programa</DialogTitle>
+          <DialogTitle>{isEditing ? 'Editar Materia Docente' : 'Subir Programa'}</DialogTitle>
           <DialogDescription>
-            Carga un PDF o DOCX y completa los datos pedagogicos para crear la materia.
+            {isEditing
+              ? 'Modifica icono, color, estructura y datos pedagogicos de la materia.'
+              : 'Carga un PDF o DOCX y completa los datos pedagogicos para crear la materia.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -333,6 +380,33 @@ export function TeacherProgramUploadModal({
               value={subjectName}
               onChange={(event) => setSubjectName(event.target.value)}
             />
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Icono</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 bg-background"
+                  value={iconName}
+                  onChange={(event) => setIconName(event.target.value as SubjectIconName)}
+                >
+                  {SUBJECT_ICON_OPTIONS.map((icon) => (
+                    <option key={icon} value={icon}>{icon}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Color</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 bg-background"
+                  value={colorName}
+                  onChange={(event) => setColorName(event.target.value as SubjectColorName)}
+                >
+                  {SUBJECT_COLOR_OPTIONS.map((color) => (
+                    <option key={color} value={color}>{color}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <div className="grid sm:grid-cols-3 gap-3">
               <div className="space-y-1">
@@ -396,26 +470,28 @@ export function TeacherProgramUploadModal({
             </div>
           </Card>
 
-          <Card className="p-4 space-y-3">
-            <Label htmlFor="program-file">Archivo del programa (PDF o DOCX, max 5MB)</Label>
-            <Input
-              id="program-file"
-              type="file"
-              accept=".pdf,.docx"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            />
+          {!isEditing && (
+            <Card className="p-4 space-y-3">
+              <Label htmlFor="program-file">Archivo del programa (PDF o DOCX, max 5MB)</Label>
+              <Input
+                id="program-file"
+                type="file"
+                accept=".pdf,.docx"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
 
-            <Button type="button" variant="outline" onClick={handleExtract} disabled={isExtracting || !file}>
-              {isExtracting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-              Autocompletar con IA
-            </Button>
+              <Button type="button" variant="outline" onClick={handleExtract} disabled={isExtracting || !file}>
+                {isExtracting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                Autocompletar con IA
+              </Button>
 
-            {sourceMeta && (
-              <p className="text-sm text-muted-foreground">
-                Archivo procesado: {sourceMeta.sourceFileName} (se conserva temporalmente 24h)
-              </p>
-            )}
-          </Card>
+              {sourceMeta && (
+                <p className="text-sm text-muted-foreground">
+                  Archivo procesado: {sourceMeta.sourceFileName} (se conserva temporalmente 24h)
+                </p>
+              )}
+            </Card>
+          )}
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -501,7 +577,7 @@ export function TeacherProgramUploadModal({
             </Button>
             <Button type="button" onClick={handleSave} disabled={!canSave}>
               {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Guardar programa
+              {isEditing ? 'Guardar cambios' : 'Guardar programa'}
             </Button>
           </div>
           {saveBlockerMessage && (

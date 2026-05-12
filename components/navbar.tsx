@@ -73,8 +73,8 @@ export function Navbar() {
             <div className="absolute -inset-1 bg-primary/20 rounded-xl blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
           <div className="hidden sm:block">
-            <h1 className="text-lg font-black text-foreground tracking-tight leading-none">Malejo Math</h1>
-            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mt-0.5">Mastery Learning</p>
+            <h1 className="text-lg font-semibold text-foreground tracking-[0.04em] leading-none [font-family:var(--font-brand)]">Malejo Math</h1>
+            <p className="text-[9px] text-muted-foreground/70 font-semibold uppercase tracking-[0.18em] mt-0.5">Mastery Learning</p>
           </div>
         </div>
 
@@ -106,15 +106,15 @@ export function Navbar() {
                   <SelectValue placeholder="Modo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="student">Modo Alumno</SelectItem>
-                  <SelectItem value="teacher">Modo Docente</SelectItem>
+                  <SelectItem value="student">Alumno</SelectItem>
+                  <SelectItem value="teacher">Docente</SelectItem>
                 </SelectContent>
               </Select>
 
               <Link href="/history">
                 <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-all active:scale-95 border border-border/50">
                   <ClipboardList className="w-4 h-4 text-primary" />
-                  <span className="hidden sm:inline">Mis evaluaciones</span>
+                  <span className="hidden sm:inline">Historial Evaluaciones</span>
                 </button>
               </Link>
               

@@ -53,6 +53,8 @@ export interface DbTeacherProgram {
   id: number
   user_id: string
   subject_name: string
+  icon_name: string
+  color_name: string
   pedagogy_profile: unknown
   units: unknown
   source_file_name: string | null
@@ -60,6 +62,22 @@ export interface DbTeacherProgram {
   source_file_size_bytes: number | null
   source_expires_at: Date | null
   status: 'active' | 'archived'
+  created_at: Date
+  updated_at: Date
+}
+
+export interface DbTeacherQuiz {
+  id: number
+  user_id: string
+  teacher_program_id: number
+  title: string
+  subject_name: string
+  mode: 'teorico' | 'practico'
+  status: 'saved' | 'pending_share'
+  selected_topics: unknown
+  question_count: number
+  questions: unknown
+  pedagogy_context: string | null
   created_at: Date
   updated_at: Date
 }

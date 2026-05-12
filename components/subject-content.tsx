@@ -9,6 +9,9 @@ import type { Subject, Topic } from '@/lib/types'
 import { useAppStore } from '@/lib/store'
 import { QuizModeDialog } from './quiz-mode-dialog'
 import { pedagogyProfileToContext } from '@/lib/teacher-programs'
+import { QuizActionDialog } from './quiz-action-dialog'
+import type { Question, QuizActionMode } from '@/lib/types'
+import { useToast } from '@/hooks/use-toast'
 
 interface SubjectContentProps {
   subject: Subject
@@ -42,11 +45,14 @@ const colorConfig = {
 }
 
 export function SubjectContent({ subject }: SubjectContentProps) {
-  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds } = useAppStore()
+  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds, addTeacherQuiz, userProfile } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
   const [showModeDialog, setShowModeDialog] = useState(false)
+  const [showActionDialog, setShowActionDialog] = useState(false)
+  const [selectedMode, setSelectedMode] = useState<'teorico' | 'practico' | null>(null)
   const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const { toast } = useToast()
   
   const colors = colorConfig[subject.id as keyof typeof colorConfig] || colorConfig.algebra
   const pedagogyContext = subject.pedagogyProfile
@@ -60,13 +66,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   )
   const progressPercentage = totalTopics > 0 ? (completedTopics / totalTopics) * 100 : 0
 
-  const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
-    if (selectedTopics.length === 0) return
-    
-    setIsLoading(true)
-    setShowModeDialog(false)
-    setActiveView('loading')
-    
+  const generateQuestions = async (mode: 'teorico' | 'practico'): Promise<Question[] | null> => {
+    if (selectedTopics.length === 0) return null
+
     try {
       const response = await fetch('/api/generate-quiz', {
         method: 'POST',
@@ -81,28 +83,134 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       })
       
       const data = await response.json()
-      
+
       if (data.questions && data.questions.length === 10) {
+        return data.questions as Question[]
+      }
+
+      console.error('No questions received:', data.error)
+      return null
+    } catch (error) {
+      console.error('Quiz generation error:', error)
+      return null
+    }
+  }
+
+  const saveTeacherQuiz = async ({
+    mode,
+    questions,
+    status,
+  }: {
+    mode: 'teorico' | 'practico'
+    questions: Question[]
+    status: 'saved' | 'pending_share'
+  }) => {
+    if (subject.source !== 'teacher' || !subject.programId) {
+      toast({ title: 'Disponible solo para materias docentes', description: 'Guarda o comparte usando una materia creada por docente.' })
+      return
+    }
+
+    const response = await fetch('/api/teacher/quizzes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        teacherProgramId: subject.programId,
+        title: `${subject.name} - ${mode === 'teorico' ? 'Teorico' : 'Practico'} - ${new Date().toLocaleDateString('es-AR')}`,
+        subjectName: subject.name,
+        mode,
+        status,
+        selectedTopics,
+        questionCount: questions.length,
+        questions,
+        pedagogyContext,
+      })
+    })
+
+    const data = await response.json()
+    if (!response.ok) {
+      const details = data?.details ? ` (${data.details})` : ''
+      throw new Error(`${data?.error || 'No se pudo guardar el cuestionario'}${details}`)
+    }
+
+    addTeacherQuiz({
+      id: data.quiz.id,
+      userId: data.quiz.user_id,
+      teacherProgramId: data.quiz.teacher_program_id,
+      title: data.quiz.title,
+      subjectName: data.quiz.subject_name,
+      mode: data.quiz.mode,
+      status: data.quiz.status,
+      selectedTopics: data.quiz.selected_topics,
+      questionCount: data.quiz.question_count,
+      questions: data.quiz.questions,
+      pedagogyContext: data.quiz.pedagogy_context || undefined,
+      createdAt: data.quiz.created_at,
+      updatedAt: data.quiz.updated_at,
+    })
+
+    toast({
+      title: '¡Tu cuestionario ya fue creado!',
+      description: status === 'saved'
+        ? 'Lo veras debajo de esta materia en la pestana Guardados.'
+        : 'Quedo marcado como pendiente para compartir.',
+    })
+  }
+
+  const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
+    setSelectedMode(mode)
+    setShowModeDialog(false)
+
+    if (userProfile?.role !== 'teacher') {
+      await handleActionSelection('realizar', mode)
+      return
+    }
+
+    setShowActionDialog(true)
+  }
+
+  const handleActionSelection = async (action: QuizActionMode, forcedMode?: 'teorico' | 'practico') => {
+    const effectiveMode = forcedMode || selectedMode
+    if (!effectiveMode) return
+
+    setIsLoading(true)
+    setShowActionDialog(false)
+    setActiveView('loading')
+
+    try {
+      const generatedQuestions = await generateQuestions(effectiveMode)
+      if (!generatedQuestions || generatedQuestions.length === 0) {
+        toast({ title: 'No se pudo generar el cuestionario', description: 'Intenta nuevamente.' })
+        setActiveView('dashboard')
+        return
+      }
+
+      if (action === 'realizar') {
         startQuiz(
           {
             subject: subject.id,
             subjectName: subject.name,
             topics: selectedTopics,
-            mode,
-            questionCount: 10,
+            mode: effectiveMode,
+            questionCount: generatedQuestions.length,
             pedagogyContext,
           },
-          data.questions
+          generatedQuestions
         )
-      } else {
-        console.error('No questions received:', data.error)
-        setActiveView('dashboard')
+        return
       }
+
+      const status = action === 'guardar' ? 'saved' : 'pending_share'
+      await saveTeacherQuiz({ mode: effectiveMode, questions: generatedQuestions, status })
+      setActiveView('dashboard')
     } catch (error) {
-      console.error('Quiz generation error:', error)
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Error desconocido',
+      })
       setActiveView('dashboard')
     } finally {
       setIsLoading(false)
+      setSelectedMode(null)
     }
   }
 
@@ -150,6 +258,11 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       )}
 
       {/* Units List */}
+      <div className="space-y-1">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Elegir temas para el cuestionario</h3>
+        <p className="text-sm text-muted-foreground">Selecciona los temas que quieras incluir en la generacion.</p>
+      </div>
+
       <div className="space-y-6">
         {subject.units.map((unit, unitIndex) => {
           const groupedTopics = unit.topics.reduce<{ group: string; topics: Topic[] }[]>((acc, topic) => {
@@ -344,6 +457,15 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         title="Empezar cuestionario"
         description="Selecciona el tipo de examen y se generaran 10 preguntas con los temas que elegiste."
       />
+
+      {userProfile?.role === 'teacher' && (
+        <QuizActionDialog
+          open={showActionDialog}
+          onOpenChange={setShowActionDialog}
+          onSelectAction={handleActionSelection}
+          isLoading={isLoading}
+        />
+      )}
     </div>
   )
 }

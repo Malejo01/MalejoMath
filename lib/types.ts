@@ -42,6 +42,7 @@ export interface QuizConfig {
   mode: 'teorico' | 'practico'
   questionCount: number
   pedagogyContext?: string
+  previewOnly?: boolean
 }
 
 export interface Answer {
@@ -124,10 +125,64 @@ export interface TeacherProgram {
   id: number
   userId: string
   subjectName: string
+  iconName: SubjectIconName
+  colorName: SubjectColorName
   pedagogyProfile: PedagogyProfile
   units: ProgramUnit[]
   sourceFileName: string | null
   createdAt: string
+}
+
+export type SubjectIconName =
+  | 'book-open'
+  | 'calculator'
+  | 'sigma'
+  | 'chart-line'
+  | 'flask-conical'
+  | 'atom'
+  | 'ruler'
+  | 'landmark'
+  | 'pie-chart'
+  | 'target'
+
+export type SubjectColorName =
+  | 'teal'
+  | 'blue'
+  | 'orange'
+  | 'green'
+  | 'red'
+  | 'indigo'
+  | 'amber'
+  | 'cyan'
+  | 'emerald'
+  | 'pink'
+
+export type TeacherQuizStatus = 'saved' | 'pending_share'
+
+export type QuizActionMode = 'realizar' | 'guardar' | 'compartir'
+
+export interface TeacherQuiz {
+  id: number
+  userId: string
+  teacherProgramId: number
+  title: string
+  subjectName: string
+  mode: 'teorico' | 'practico'
+  status: TeacherQuizStatus
+  selectedTopics: { id: string; name: string }[]
+  questionCount: number
+  questions: Question[]
+  pedagogyContext?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TeacherProgramFilters {
+  name: string
+  level: string
+  degree: string
+  mode: '' | 'teorico' | 'practico'
+  createdAfter: string
 }
 
 export interface UserProfile {
