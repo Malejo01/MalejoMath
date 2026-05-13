@@ -64,7 +64,7 @@ export function QuizActionDialog({
             className="w-full justify-start h-12 rounded-xl"
           >
             <Share2 className="w-4 h-4 mr-2" />
-            Compartir (pendiente)
+            Compartir
           </Button>
         </div>
       </DialogContent>

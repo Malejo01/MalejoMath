@@ -6,6 +6,7 @@ import { Dashboard } from './dashboard'
 import { QuizEngine } from './quiz-engine'
 import { ResultsScreen } from './results-screen'
 import { LoadingScreen } from './loading-screen'
+import { Toaster } from '@/components/ui/toaster'
 
 export function MalejoMathApp() {
   const { activeView, currentQuiz, resetQuiz } = useAppStore()
@@ -21,6 +22,7 @@ export function MalejoMathApp() {
       {activeView === 'loading' && <LoadingScreen />}
       {activeView === 'quiz' && <QuizEngine />}
       {activeView === 'results' && <ResultsScreen />}
+      <Toaster />
     </div>
   )
 }

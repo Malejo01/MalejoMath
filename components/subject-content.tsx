@@ -10,12 +10,18 @@ import { useAppStore } from '@/lib/store'
 import { QuizModeDialog } from './quiz-mode-dialog'
 import { pedagogyProfileToContext } from '@/lib/teacher-programs'
 import { QuizActionDialog } from './quiz-action-dialog'
-import type { ProgramUnit, Question, QuizActionMode, SubjectColorName, SubjectIconName } from '@/lib/types'
+import { ShareQuizDialog } from './share-quiz-dialog'
+import { exportQuizToMoodleGift } from '@/lib/moodle-export'
+import type { ProgramUnit, Question, QuizActionMode, SubjectColorName, SubjectIconName, TeacherQuiz } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
 
 interface SubjectContentProps {
   subject: Subject
 }
+
+const MIN_QUESTION_COUNT = 5
+const MAX_QUESTION_COUNT = 50
+const DEFAULT_QUESTION_COUNT = 10
 
 const colorConfig = {
   algebra: {
@@ -49,7 +55,12 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [showModeDialog, setShowModeDialog] = useState(false)
   const [showActionDialog, setShowActionDialog] = useState(false)
+  const [showShareDialog, setShowShareDialog] = useState(false)
   const [selectedMode, setSelectedMode] = useState<'teorico' | 'practico' | null>(null)
+  const [selectedQuestionCount, setSelectedQuestionCount] = useState<number | null>(null)
+  const [questionCountValue, setQuestionCountValue] = useState<string>(String(DEFAULT_QUESTION_COUNT))
+  const [pendingSharedQuiz, setPendingSharedQuiz] = useState<TeacherQuiz | null>(null)
+  const [isExportingMoodle, setIsExportingMoodle] = useState(false)
   const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const { toast } = useToast()
@@ -58,6 +69,17 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   const pedagogyContext = subject.pedagogyProfile
     ? pedagogyProfileToContext(subject.pedagogyProfile)
     : undefined
+  const parsedQuestionCount = Number(questionCountValue)
+  const isQuestionCountValid = Number.isInteger(parsedQuestionCount)
+    && parsedQuestionCount >= MIN_QUESTION_COUNT
+    && parsedQuestionCount <= MAX_QUESTION_COUNT
+  const previewQuestionCount = isQuestionCountValid ? parsedQuestionCount : DEFAULT_QUESTION_COUNT
+
+  const adjustQuestionCount = (delta: number) => {
+    const base = isQuestionCountValid ? parsedQuestionCount : DEFAULT_QUESTION_COUNT
+    const next = Math.min(MAX_QUESTION_COUNT, Math.max(MIN_QUESTION_COUNT, base + delta))
+    setQuestionCountValue(String(next))
+  }
 
   const totalTopics = subject.units.reduce((acc, unit) => acc + unit.topics.length, 0)
   const completedTopics = subject.units.reduce(
@@ -148,7 +170,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     return Number(createData.program.id)
   }
 
-  const generateQuestions = async (mode: 'teorico' | 'practico'): Promise<Question[] | null> => {
+  const generateQuestions = async (mode: 'teorico' | 'practico', questionCount: number): Promise<Question[] | null> => {
     if (selectedTopics.length === 0) return null
 
     try {
@@ -159,6 +181,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
           subject: subject.name,
           topics: selectedTopics,
           mode,
+          questionCount,
           pedagogyContext,
           previousQuestionIds: getUsedQuestionIds()
         })
@@ -166,7 +189,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       
       const data = await response.json()
 
-      if (data.questions && data.questions.length === 10) {
+      if (Array.isArray(data.questions) && data.questions.length === questionCount) {
         return data.questions as Question[]
       }
 
@@ -186,7 +209,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     mode: 'teorico' | 'practico'
     questions: Question[]
     status: 'saved' | 'pending_share'
-  }) => {
+  }): Promise<TeacherQuiz> => {
     const teacherProgramId = await resolveTeacherProgramId()
 
     const response = await fetch('/api/teacher/quizzes', {
@@ -211,7 +234,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       throw new Error(`${data?.error || 'No se pudo guardar el cuestionario'}${details}`)
     }
 
-    addTeacherQuiz({
+    const mappedQuiz: TeacherQuiz = {
       id: data.quiz.id,
       userId: data.quiz.user_id,
       teacherProgramId: data.quiz.teacher_program_id,
@@ -225,7 +248,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       pedagogyContext: data.quiz.pedagogy_context || undefined,
       createdAt: data.quiz.created_at,
       updatedAt: data.quiz.updated_at,
-    })
+    }
+
+    addTeacherQuiz(mappedQuiz)
 
     toast({
       title: '¡Tu cuestionario ya fue creado!',
@@ -233,33 +258,54 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         ? 'Lo veras debajo de esta materia en la pestana Guardados.'
         : 'Quedo marcado como pendiente para compartir.',
     })
+
+    return mappedQuiz
   }
 
   const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
+    if (!isQuestionCountValid) {
+      toast({
+        title: 'Cantidad invalida',
+        description: `Ingresa un numero entero entre ${MIN_QUESTION_COUNT} y ${MAX_QUESTION_COUNT}.`,
+      })
+      return
+    }
+
     setSelectedMode(mode)
+    setSelectedQuestionCount(parsedQuestionCount)
     setShowModeDialog(false)
 
     if (userProfile?.role !== 'teacher') {
-      await handleActionSelection('realizar', mode)
+      await handleActionSelection('realizar', mode, parsedQuestionCount)
       return
     }
 
     setShowActionDialog(true)
   }
 
-  const handleActionSelection = async (action: QuizActionMode, forcedMode?: 'teorico' | 'practico') => {
+  const handleActionSelection = async (
+    action: QuizActionMode,
+    forcedMode?: 'teorico' | 'practico',
+    forcedQuestionCount?: number
+  ) => {
     const effectiveMode = forcedMode || selectedMode
-    if (!effectiveMode) return
+    const effectiveQuestionCount = forcedQuestionCount || selectedQuestionCount
+    if (!effectiveMode || !effectiveQuestionCount) return
+    const useLoadingScreen = userProfile?.role !== 'teacher'
 
     setIsLoading(true)
     setShowActionDialog(false)
-    setActiveView('loading')
+    if (useLoadingScreen) {
+      setActiveView('loading')
+    }
 
     try {
-      const generatedQuestions = await generateQuestions(effectiveMode)
+      const generatedQuestions = await generateQuestions(effectiveMode, effectiveQuestionCount)
       if (!generatedQuestions || generatedQuestions.length === 0) {
         toast({ title: 'No se pudo generar el cuestionario', description: 'Intenta nuevamente.' })
-        setActiveView('dashboard')
+        if (useLoadingScreen) {
+          setActiveView('dashboard')
+        }
         return
       }
 
@@ -279,17 +325,49 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       }
 
       const status = action === 'guardar' ? 'saved' : 'pending_share'
-      await saveTeacherQuiz({ mode: effectiveMode, questions: generatedQuestions, status })
-      setActiveView('dashboard')
+      const savedQuiz = await saveTeacherQuiz({ mode: effectiveMode, questions: generatedQuestions, status })
+
+      if (action === 'compartir') {
+        setPendingSharedQuiz(savedQuiz)
+        setShowShareDialog(true)
+      }
+
+      if (useLoadingScreen) {
+        setActiveView('dashboard')
+      }
     } catch (error) {
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error desconocido',
       })
-      setActiveView('dashboard')
+      if (useLoadingScreen) {
+        setActiveView('dashboard')
+      }
     } finally {
       setIsLoading(false)
       setSelectedMode(null)
+      setSelectedQuestionCount(null)
+    }
+  }
+
+  const handleExportPendingShare = () => {
+    if (!pendingSharedQuiz) {
+      toast({ title: 'No hay cuestionario para exportar', description: 'Genera o selecciona un cuestionario primero.' })
+      return
+    }
+
+    try {
+      setIsExportingMoodle(true)
+      const fileName = exportQuizToMoodleGift(pendingSharedQuiz)
+      toast({ title: 'Exportacion lista', description: `Se descargo ${fileName}` })
+      setShowShareDialog(false)
+    } catch (error) {
+      toast({
+        title: 'No se pudo exportar',
+        description: error instanceof Error ? error.message : 'Error desconocido al exportar a Moodle.',
+      })
+    } finally {
+      setIsExportingMoodle(false)
     }
   }
 
@@ -515,7 +593,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
             onClick={() => setShowModeDialog(true)}
             disabled={isLoading}
             className={cn(
-              'w-full h-14 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
+              'w-full h-16 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
               'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)] text-white border-0',
               'disabled:opacity-50',
               'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
@@ -523,7 +601,10 @@ export function SubjectContent({ subject }: SubjectContentProps) {
             size="lg"
           >
             <Play className="w-5 h-5" />
-            Empezar Cuestionario
+            <span className="flex flex-col items-start leading-tight">
+              <span>Empezar Cuestionario</span>
+              <span className="text-xs font-semibold text-white/85">Generar {previewQuestionCount} preguntas</span>
+            </span>
           </Button>
         </div>
       )}
@@ -534,16 +615,31 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         onSelectMode={handleStartQuiz}
         isLoading={isLoading}
         title="Empezar cuestionario"
-        description="Selecciona el tipo de examen y se generaran 10 preguntas con los temas que elegiste."
+        description="Selecciona la cantidad y el tipo de examen para generar el cuestionario."
+        questionCountValue={questionCountValue}
+        onQuestionCountValueChange={setQuestionCountValue}
+        onDecreaseQuestionCount={() => adjustQuestionCount(-1)}
+        onIncreaseQuestionCount={() => adjustQuestionCount(1)}
+        isQuestionCountValid={isQuestionCountValid}
+        minQuestionCount={MIN_QUESTION_COUNT}
+        maxQuestionCount={MAX_QUESTION_COUNT}
       />
 
       {userProfile?.role === 'teacher' && (
-        <QuizActionDialog
-          open={showActionDialog}
-          onOpenChange={setShowActionDialog}
-          onSelectAction={handleActionSelection}
-          isLoading={isLoading}
-        />
+        <>
+          <QuizActionDialog
+            open={showActionDialog}
+            onOpenChange={setShowActionDialog}
+            onSelectAction={handleActionSelection}
+            isLoading={isLoading}
+          />
+          <ShareQuizDialog
+            open={showShareDialog}
+            onOpenChange={setShowShareDialog}
+            onExportMoodle={handleExportPendingShare}
+            isExporting={isExportingMoodle}
+          />
+        </>
       )}
     </div>
   )

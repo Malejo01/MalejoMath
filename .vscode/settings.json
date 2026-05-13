@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "Set-Content": true,
+        "/^node -e \"const \\{ convertQuizToGift \\} = require\\('\\./lib/moodle-export'\\); const quizzes = \\[\\{ title: 'Latex Test', questions: \\[\\{ question: 'What is \\$\\$\\\\\\\\frac\\{1\\}\\{2\\}\\$\\$\\?', options: \\['0\\.5', '1'\\], answer: '0\\.5' \\}, \\{ question: 'Evaluate \\\\\\\\begin\\{cases\\} x & x > 0 \\\\\\\\\\\\\\\\ -x & x \\\\\\\\le 0 \\\\\\\\end\\{cases\\}', options: \\['abs\\(x\\)', 'x'\\], answer: 'abs\\(x\\)' \\}\\] \\}\\]; console\\.log\\(convertQuizToGift\\(quizzes\\[0\\]\\)\\);\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

@@ -48,9 +48,12 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Download,
 } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { TeacherProgramUploadModal } from './teacher-program-upload-modal'
+import { useToast } from '@/hooks/use-toast'
+import { exportQuizToMoodleGift } from '@/lib/moodle-export'
 import type { TeacherProgram, TeacherQuiz } from '@/lib/types'
 
 type TeacherProgramApiShape = TeacherProgram & {
@@ -135,6 +138,7 @@ export function Dashboard() {
     startQuizPreview,
   } = useAppStore()
   const { isSignedIn } = useAuth()
+  const { toast } = useToast()
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null)
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -149,6 +153,7 @@ export function Dashboard() {
   const [teacherSection, setTeacherSection] = useState<'materias' | 'crear' | 'cuestionarios'>('materias')
   const [performedQuizzes, setPerformedQuizzes] = useState<Record<string, unknown>[]>([])
   const [expandedQuizId, setExpandedQuizId] = useState<number | null>(null)
+  const [exportingQuizId, setExportingQuizId] = useState<number | null>(null)
   const mySubjectsScrollRef = useRef<HTMLDivElement | null>(null)
   const [canScrollMySubjectsLeft, setCanScrollMySubjectsLeft] = useState(false)
   const [canScrollMySubjectsRight, setCanScrollMySubjectsRight] = useState(false)
@@ -497,6 +502,21 @@ export function Dashboard() {
       },
       quiz.questions
     )
+  }
+
+  const handleExportQuiz = (quiz: TeacherQuiz) => {
+    try {
+      setExportingQuizId(quiz.id)
+      const fileName = exportQuizToMoodleGift(quiz)
+      toast({ title: 'Exportacion lista', description: `Se descargo ${fileName}` })
+    } catch (error) {
+      toast({
+        title: 'No se pudo exportar',
+        description: error instanceof Error ? error.message : 'Error desconocido al exportar a Moodle.',
+      })
+    } finally {
+      setExportingQuizId(null)
+    }
   }
 
   return (
@@ -858,6 +878,15 @@ export function Dashboard() {
                               <Button size="sm" onClick={() => handleRunQuiz(quiz)}>
                                 <PlayCircle className="w-4 h-4 mr-1" />
                                 Realizar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={exportingQuizId === quiz.id}
+                                onClick={() => handleExportQuiz(quiz)}
+                              >
+                                <Download className="w-4 h-4 mr-1" />
+                                {exportingQuizId === quiz.id ? 'Exportando...' : 'Exportar Moodle'}
                               </Button>
                               <Button size="sm" variant="destructive" onClick={() => handleDeleteQuiz(quiz.id)}>
                                 <Trash2 className="w-4 h-4 mr-1" />

@@ -147,13 +147,13 @@ async function generateQuizBatch({
     model: google('gemini-2.5-flash'),
     schema: quizSchema,
     schemaName: 'quizQuestions',
-    schemaDescription: 'Objeto JSON con exactamente 10 preguntas, cada una con opciones y correctAnswer 0-based.',
+    schemaDescription: `Objeto JSON con exactamente ${questionCount} preguntas, cada una con opciones y correctAnswer 0-based.`,
     experimental_repairText: repairQuizJson,
     system: `Eres un experto generador de exámenes matemáticos universitarios. 
     Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
 
     REQUISITOS DEL CUESTIONARIO:
-    - Genera exactamente 10 preguntas, sin importar el modo.
+    - Genera exactamente ${questionCount} preguntas, sin importar el modo.
 
     FORMATO ESTRICTO:
     - Responde solo con JSON válido (sin markdown, sin comentarios).
@@ -195,9 +195,17 @@ ${pedagogyNote}
 }
 
 export async function POST(req: Request) {
-  const { subject, topics, mode, previousQuestionIds, previousQuestions, pedagogyContext } = await req.json()
+  const { subject, topics, mode, previousQuestionIds, previousQuestions, pedagogyContext, questionCount: rawQuestionCount } = await req.json()
+  const parsedQuestionCount = Number(rawQuestionCount)
+  const questionCount = Number.isInteger(parsedQuestionCount) ? parsedQuestionCount : 10
 
-  const questionCount = 10
+  if (questionCount < 5 || questionCount > 50) {
+    return Response.json({
+      questions: [],
+      error: 'La cantidad de preguntas debe estar entre 5 y 50.'
+    }, { status: 400 })
+  }
+
   const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
   const previousQuestionList = Array.isArray(previousQuestions) ? previousQuestions : []
   const previousQuestionTexts = previousQuestionList

@@ -1,6 +1,6 @@
 'use client'
 
-import { BookOpen, Calculator, Loader2 } from 'lucide-react'
+import { BookOpen, Calculator, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -18,6 +18,13 @@ interface QuizModeDialogProps {
   isLoading?: boolean
   title?: string
   description?: string
+  questionCountValue: string
+  onQuestionCountValueChange: (value: string) => void
+  onDecreaseQuestionCount: () => void
+  onIncreaseQuestionCount: () => void
+  isQuestionCountValid: boolean
+  minQuestionCount?: number
+  maxQuestionCount?: number
 }
 
 const modeCards = [
@@ -48,6 +55,13 @@ export function QuizModeDialog({
   isLoading = false,
   title = 'Elegir tipo de cuestionario',
   description = 'Selecciona si quieres practicar con un examen teorico o practico.',
+  questionCountValue,
+  onQuestionCountValueChange,
+  onDecreaseQuestionCount,
+  onIncreaseQuestionCount,
+  isQuestionCountValid,
+  minQuestionCount = 5,
+  maxQuestionCount = 50,
 }: QuizModeDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -60,12 +74,58 @@ export function QuizModeDialog({
         </DialogHeader>
 
         <div className="px-6 pb-6 space-y-3">
+          <div className="rounded-2xl border-2 border-border/70 bg-muted/20 p-4 space-y-2">
+            <p className="text-sm font-semibold text-foreground">Cantidad de preguntas</p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={onDecreaseQuestionCount}
+                disabled={isLoading}
+                aria-label="Disminuir cantidad de preguntas"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <input
+                type="number"
+                min={minQuestionCount}
+                max={maxQuestionCount}
+                step={1}
+                value={questionCountValue}
+                onChange={(event) => onQuestionCountValueChange(event.target.value)}
+                disabled={isLoading}
+                className={cn(
+                  'h-10 w-full rounded-md border bg-background px-3 text-center text-base font-bold outline-none',
+                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  !isQuestionCountValid && 'border-destructive text-destructive focus-visible:ring-destructive'
+                )}
+                aria-label="Cantidad de preguntas"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={onIncreaseQuestionCount}
+                disabled={isLoading}
+                aria-label="Aumentar cantidad de preguntas"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className={cn('text-xs', isQuestionCountValid ? 'text-muted-foreground' : 'text-destructive')}>
+              {isQuestionCountValid
+                ? `Rango permitido: ${minQuestionCount} a ${maxQuestionCount}.`
+                : `Ingresa un numero entero entre ${minQuestionCount} y ${maxQuestionCount}.`}
+            </p>
+          </div>
+
           {modeCards.map(({ mode, title: modeTitle, description: modeDescription, icon: Icon, accent, border, background }) => (
             <Button
               key={mode}
               type="button"
               variant="outline"
-              disabled={isLoading}
+              disabled={isLoading || !isQuestionCountValid}
               onClick={() => onSelectMode(mode)}
               className={cn(
                 'h-auto w-full justify-start rounded-2xl border-2 px-4 py-4 text-left',
