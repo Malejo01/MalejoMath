@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS teacher_quizzes (
   teacher_program_id INTEGER NOT NULL REFERENCES teacher_programs(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   subject_name TEXT NOT NULL,
-  mode TEXT NOT NULL CHECK (mode IN ('teorico', 'practico')),
+  mode TEXT NOT NULL CHECK (mode IN ('teorico', 'practico', 'mixto')),
   status TEXT NOT NULL CHECK (status IN ('saved', 'pending_share')),
   selected_topics JSONB NOT NULL,
   question_count INTEGER NOT NULL,

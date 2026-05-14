@@ -39,7 +39,7 @@ export interface QuizConfig {
   subject: string
   subjectName: string
   topics: { id: string; name: string }[]
-  mode: 'teorico' | 'practico'
+  mode: 'teorico' | 'practico' | 'mixto'
   questionCount: number
   pedagogyContext?: string
   previewOnly?: boolean
@@ -167,7 +167,7 @@ export interface TeacherQuiz {
   teacherProgramId: number
   title: string
   subjectName: string
-  mode: 'teorico' | 'practico'
+  mode: 'teorico' | 'practico' | 'mixto'
   status: TeacherQuizStatus
   selectedTopics: { id: string; name: string }[]
   questionCount: number
@@ -181,7 +181,7 @@ export interface TeacherProgramFilters {
   name: string
   level: string
   degree: string
-  mode: '' | 'teorico' | 'practico'
+  mode: '' | 'teorico' | 'practico' | 'mixto'
   createdAfter: string
 }
 

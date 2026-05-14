@@ -22,6 +22,7 @@ interface AppState {
   teacherPrograms: TeacherProgram[]
   teacherQuizzes: TeacherQuiz[]
   teacherProgramFilters: TeacherProgramFilters
+  teacherSection: 'materias' | 'crear' | 'cuestionarios'
   
   // Current Quiz State
   currentQuiz: {
@@ -67,6 +68,7 @@ interface AppState {
   updateTeacherQuiz: (quizId: number, updates: Partial<TeacherQuiz>) => void
   removeTeacherQuiz: (quizId: number) => void
   setTeacherProgramFilters: (filters: Partial<TeacherProgramFilters>) => void
+  setTeacherSection: (section: 'materias' | 'crear' | 'cuestionarios') => void
 }
 
 const initialProgress: UserProgress = {
@@ -107,6 +109,7 @@ export const useAppStore = create<AppState>()(
       teacherPrograms: [],
       teacherQuizzes: [],
       teacherProgramFilters: initialTeacherProgramFilters,
+      teacherSection: 'materias',
       
       currentQuiz: {
         config: null,
@@ -365,6 +368,8 @@ export const useAppStore = create<AppState>()(
           ...filters,
         },
       })),
+
+      setTeacherSection: (section) => set({ teacherSection: section }),
     }),
     {
       name: 'malejo-math-storage',

@@ -194,6 +194,18 @@ ${pedagogyNote}
   return object.questions
 }
 
+function interleaveQuestions(teoricoQuestions: any[], practicoQuestions: any[], total: number) {
+  const mixed = []
+  const maxLength = Math.max(teoricoQuestions.length, practicoQuestions.length)
+
+  for (let i = 0; i < maxLength && mixed.length < total; i++) {
+    if (teoricoQuestions[i]) mixed.push(teoricoQuestions[i])
+    if (practicoQuestions[i] && mixed.length < total) mixed.push(practicoQuestions[i])
+  }
+
+  return mixed.slice(0, total)
+}
+
 export async function POST(req: Request) {
   const { subject, topics, mode, previousQuestionIds, previousQuestions, pedagogyContext, questionCount: rawQuestionCount } = await req.json()
   const parsedQuestionCount = Number(rawQuestionCount)
@@ -223,7 +235,9 @@ export async function POST(req: Request) {
 
   const modeDescription = mode === 'teorico'
     ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
-    : 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
+    : mode === 'practico'
+      ? 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
+      : 'MODO MIXTO: Equilibrar preguntas teoricas y practicas.'
 
   const previousNote = previousQuestionTexts.length > 0
     ? `NO repitas ni reformules estas preguntas previas:\n${previousQuestionTexts.map((question: string, index: number) => `${index + 1}. ${question}`).join('\n')}`
@@ -237,6 +251,80 @@ export async function POST(req: Request) {
 
   try {
     const collectedQuestions = []
+
+    if (mode === 'mixto') {
+      const teoricoCount = Math.ceil(questionCount / 2)
+      const practicoCount = Math.floor(questionCount / 2)
+      let teoricoCollected: any[] = []
+      let practicoCollected: any[] = []
+
+      for (let attempt = 0; attempt < 3 && (teoricoCollected.length < teoricoCount || practicoCollected.length < practicoCount); attempt++) {
+        if (teoricoCollected.length < teoricoCount) {
+          const teoricoBatch = await generateQuizBatch({
+            subject,
+            curriculum,
+            modeDescription: 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.',
+            topicsText,
+            questionCount: teoricoCount,
+            previousNote,
+            pedagogyNote,
+          })
+
+          for (const question of teoricoBatch) {
+            const fingerprint = normalizeQuestionText(question.question)
+            if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) continue
+            previousQuestionFingerprints.add(fingerprint)
+            teoricoCollected.push(question)
+            if (teoricoCollected.length === teoricoCount) break
+          }
+        }
+
+        if (practicoCollected.length < practicoCount) {
+          const practicoBatch = await generateQuizBatch({
+            subject,
+            curriculum,
+            modeDescription: 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.',
+            topicsText,
+            questionCount: practicoCount,
+            previousNote,
+            pedagogyNote,
+          })
+
+          for (const question of practicoBatch) {
+            const fingerprint = normalizeQuestionText(question.question)
+            if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) continue
+            previousQuestionFingerprints.add(fingerprint)
+            practicoCollected.push(question)
+            if (practicoCollected.length === practicoCount) break
+          }
+        }
+      }
+
+      if (teoricoCollected.length < teoricoCount || practicoCollected.length < practicoCount) {
+        return Response.json({
+          questions: [],
+          error: 'No se pudo generar un cuestionario mixto con suficiente variedad. Intenta otra vez.'
+        }, { status: 409 })
+      }
+
+      const mixedQuestions = interleaveQuestions(teoricoCollected, practicoCollected, questionCount)
+
+      const shuffledMixedQuestions = mixedQuestions.map((q) => {
+        const optionsWithIndex = q.options.map((text: string, index: number) => ({ text, index }))
+        shuffleInPlace(optionsWithIndex)
+
+        const newOptions = optionsWithIndex.map((o: { text: string }) => o.text)
+        const newCorrectAnswer = optionsWithIndex.findIndex((o: { index: number }) => o.index === q.correctAnswer)
+
+        return {
+          ...q,
+          options: newOptions,
+          correctAnswer: newCorrectAnswer
+        }
+      })
+
+      return Response.json({ questions: shuffledMixedQuestions })
+    }
 
     for (let attempt = 0; attempt < 3 && collectedQuestions.length < questionCount; attempt++) {
       const generatedQuestions = await generateQuizBatch({

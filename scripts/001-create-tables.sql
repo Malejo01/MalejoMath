@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
   id SERIAL PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   subject TEXT NOT NULL,                  -- e.g., 'Álgebra I'
-  mode TEXT NOT NULL CHECK (mode IN ('teorico', 'practico')),
+  mode TEXT NOT NULL CHECK (mode IN ('teorico', 'practico', 'mixto')),
   topics TEXT[] NOT NULL,                 -- Array of topic names selected
   total_questions INTEGER NOT NULL,
   correct_answers INTEGER NOT NULL,

@@ -135,7 +135,7 @@ export function ResultsScreen() {
     }
   }, [explanations])
 
-  const handleRetry = useCallback(async (mode: 'teorico' | 'practico') => {
+  const handleRetry = useCallback(async (mode: 'teorico' | 'practico' | 'mixto') => {
     if (!config) return
     
     setIsRetrying(true)
@@ -150,6 +150,7 @@ export function ResultsScreen() {
           subject: config.subjectName,
           topics: config.topics,
           mode,
+          questionCount: config.questionCount,
           previousQuestions: questions.map((question) => ({
             id: question.id,
             question: question.question,
@@ -198,7 +199,7 @@ export function ResultsScreen() {
           {results.passed ? 'Excelente trabajo!' : 'Sigue practicando!'}
         </h1>
         <p className="text-muted-foreground mt-1 font-medium">
-          {config?.mode === 'teorico' ? 'Cuestionario Teorico' : 'Cuestionario Practico'}
+          {config?.mode === 'teorico' ? 'Cuestionario Teorico' : config?.mode === 'practico' ? 'Cuestionario Practico' : 'Cuestionario Mixto'}
         </p>
       </header>
 
@@ -477,7 +478,8 @@ export function ResultsScreen() {
         onSelectMode={handleRetry}
         isLoading={isRetrying}
         title="Reintentar cuestionario"
-        description="Selecciona si quieres regenerar este cuestionario en modo teorico o practico con los mismos temas."
+        description="Selecciona si quieres regenerar este cuestionario en modo teorico, practico o mixto con los mismos temas."
+        showQuestionCountSelector={false}
       />
     </div>
   )

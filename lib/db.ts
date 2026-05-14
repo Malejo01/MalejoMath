@@ -27,7 +27,7 @@ export interface DbQuizAttempt {
   id: string
   user_id: string
   subject: string
-  mode: 'teorico' | 'practico'
+  mode: 'teorico' | 'practico' | 'mixto'
   topics: string[]
   total_questions: number
   correct_answers: number
@@ -72,7 +72,7 @@ export interface DbTeacherQuiz {
   teacher_program_id: number
   title: string
   subject_name: string
-  mode: 'teorico' | 'practico'
+  mode: 'teorico' | 'practico' | 'mixto'
   status: 'saved' | 'pending_share'
   selected_topics: unknown
   question_count: number

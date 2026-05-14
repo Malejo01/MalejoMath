@@ -23,6 +23,16 @@ const MIN_QUESTION_COUNT = 5
 const MAX_QUESTION_COUNT = 50
 const DEFAULT_QUESTION_COUNT = 10
 
+function normalizeQuestionFingerprint(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\$+/g, '')
+    .replace(/\\[a-zA-Z]+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 const colorConfig = {
   algebra: {
     bg: 'bg-[var(--algebra)]',
@@ -51,12 +61,12 @@ const colorConfig = {
 }
 
 export function SubjectContent({ subject }: SubjectContentProps) {
-  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds, addTeacherQuiz, userProfile } = useAppStore()
+  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds, addTeacherQuiz, setTeacherSection, userProfile } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
   const [showModeDialog, setShowModeDialog] = useState(false)
   const [showActionDialog, setShowActionDialog] = useState(false)
   const [showShareDialog, setShowShareDialog] = useState(false)
-  const [selectedMode, setSelectedMode] = useState<'teorico' | 'practico' | null>(null)
+  const [selectedMode, setSelectedMode] = useState<'teorico' | 'practico' | 'mixto' | null>(null)
   const [selectedQuestionCount, setSelectedQuestionCount] = useState<number | null>(null)
   const [questionCountValue, setQuestionCountValue] = useState<string>(String(DEFAULT_QUESTION_COUNT))
   const [pendingSharedQuiz, setPendingSharedQuiz] = useState<TeacherQuiz | null>(null)
@@ -170,7 +180,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     return Number(createData.program.id)
   }
 
-  const generateQuestions = async (mode: 'teorico' | 'practico', questionCount: number): Promise<Question[] | null> => {
+  const generateQuestionsByMode = async (mode: 'teorico' | 'practico' | 'mixto', questionCount: number): Promise<Question[] | null> => {
     if (selectedTopics.length === 0) return null
 
     try {
@@ -201,12 +211,56 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     }
   }
 
+  const generateMixedQuestions = async (questionCount: number): Promise<Question[] | null> => {
+    const teoricoCount = Math.ceil(questionCount / 2)
+    const practicoCount = Math.floor(questionCount / 2)
+
+    const [teoricoQuestions, practicoQuestions] = await Promise.all([
+      generateQuestionsByMode('teorico', teoricoCount),
+      generateQuestionsByMode('practico', practicoCount),
+    ])
+
+    if (!teoricoQuestions || !practicoQuestions) {
+      return null
+    }
+
+    const merged: Question[] = []
+    const seen = new Set<string>()
+    const maxLength = Math.max(teoricoQuestions.length, practicoQuestions.length)
+
+    for (let index = 0; index < maxLength; index++) {
+      const teorico = teoricoQuestions[index]
+      if (teorico) {
+        const fingerprint = normalizeQuestionFingerprint(teorico.question)
+        if (fingerprint.length > 0 && !seen.has(fingerprint)) {
+          seen.add(fingerprint)
+          merged.push(teorico)
+        }
+      }
+
+      const practico = practicoQuestions[index]
+      if (practico && merged.length < questionCount) {
+        const fingerprint = normalizeQuestionFingerprint(practico.question)
+        if (fingerprint.length > 0 && !seen.has(fingerprint)) {
+          seen.add(fingerprint)
+          merged.push(practico)
+        }
+      }
+
+      if (merged.length === questionCount) {
+        break
+      }
+    }
+
+    return merged.length === questionCount ? merged : null
+  }
+
   const saveTeacherQuiz = async ({
     mode,
     questions,
     status,
   }: {
-    mode: 'teorico' | 'practico'
+    mode: 'teorico' | 'practico' | 'mixto'
     questions: Question[]
     status: 'saved' | 'pending_share'
   }): Promise<TeacherQuiz> => {
@@ -217,7 +271,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         teacherProgramId,
-        title: `${subject.name} - ${mode === 'teorico' ? 'Teorico' : 'Practico'} - ${new Date().toLocaleDateString('es-AR')}`,
+        title: `${subject.name} - ${mode === 'teorico' ? 'Teorico' : mode === 'practico' ? 'Practico' : 'Mixto'} - ${new Date().toLocaleDateString('es-AR')}`,
         subjectName: subject.name,
         mode,
         status,
@@ -262,7 +316,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     return mappedQuiz
   }
 
-  const handleStartQuiz = async (mode: 'teorico' | 'practico') => {
+  const handleStartQuiz = async (mode: 'teorico' | 'practico' | 'mixto') => {
     if (!isQuestionCountValid) {
       toast({
         title: 'Cantidad invalida',
@@ -285,13 +339,13 @@ export function SubjectContent({ subject }: SubjectContentProps) {
 
   const handleActionSelection = async (
     action: QuizActionMode,
-    forcedMode?: 'teorico' | 'practico',
+    forcedMode?: 'teorico' | 'practico' | 'mixto',
     forcedQuestionCount?: number
   ) => {
     const effectiveMode = forcedMode || selectedMode
     const effectiveQuestionCount = forcedQuestionCount || selectedQuestionCount
     if (!effectiveMode || !effectiveQuestionCount) return
-    const useLoadingScreen = userProfile?.role !== 'teacher'
+    const useLoadingScreen = userProfile?.role !== 'teacher' || action === 'guardar'
 
     setIsLoading(true)
     setShowActionDialog(false)
@@ -300,7 +354,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     }
 
     try {
-      const generatedQuestions = await generateQuestions(effectiveMode, effectiveQuestionCount)
+      const generatedQuestions = effectiveMode === 'mixto'
+        ? await generateMixedQuestions(effectiveQuestionCount)
+        : await generateQuestionsByMode(effectiveMode, effectiveQuestionCount)
       if (!generatedQuestions || generatedQuestions.length === 0) {
         toast({ title: 'No se pudo generar el cuestionario', description: 'Intenta nuevamente.' })
         if (useLoadingScreen) {
@@ -326,6 +382,10 @@ export function SubjectContent({ subject }: SubjectContentProps) {
 
       const status = action === 'guardar' ? 'saved' : 'pending_share'
       const savedQuiz = await saveTeacherQuiz({ mode: effectiveMode, questions: generatedQuestions, status })
+
+      if (action === 'guardar') {
+        setTeacherSection('cuestionarios')
+      }
 
       if (action === 'compartir') {
         setPendingSharedQuiz(savedQuiz)

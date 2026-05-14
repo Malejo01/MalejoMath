@@ -94,7 +94,11 @@ export async function POST(req: Request) {
     const teacherProgramId = Number(body?.teacherProgramId)
     const title = String(body?.title ?? '').trim()
     const subjectName = String(body?.subjectName ?? '').trim()
-    const mode = body?.mode === 'practico' ? 'practico' : 'teorico'
+    const mode = body?.mode === 'practico'
+      ? 'practico'
+      : body?.mode === 'mixto'
+        ? 'mixto'
+        : 'teorico'
     const status = (body?.status === 'pending_share' ? 'pending_share' : 'saved') as TeacherQuizStatus
     const selectedTopics = Array.isArray(body?.selectedTopics) ? body.selectedTopics : []
     const questionCount = Number(body?.questionCount ?? 0)

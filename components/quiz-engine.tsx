@@ -252,7 +252,7 @@ export function QuizEngine() {
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             {isPreviewMode
               ? `Previsualizacion - ${currentQuestion.topicName}`
-              : `${config?.mode === 'teorico' ? 'Modo Teorico' : 'Modo Practico'} - ${currentQuestion.topicName}`}
+              : `${config?.mode === 'teorico' ? 'Modo Teorico' : config?.mode === 'practico' ? 'Modo Practico' : 'Modo Mixto'} - ${currentQuestion.topicName}`}
           </span>
         </div>
       </header>

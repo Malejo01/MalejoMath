@@ -88,13 +88,16 @@ function normalizeTeacherProgram(program: TeacherProgramApiShape): TeacherProgra
 }
 
 function normalizeTeacherQuiz(quiz: Record<string, unknown>): TeacherQuiz {
+  const rawMode = quiz.mode
+  const normalizedMode = rawMode === 'practico' ? 'practico' : rawMode === 'mixto' ? 'mixto' : 'teorico'
+
   return {
     id: Number(quiz.id),
     userId: String(quiz.user_id || ''),
     teacherProgramId: Number(quiz.teacher_program_id || 0),
     title: String(quiz.title || 'Cuestionario docente'),
     subjectName: String(quiz.subject_name || ''),
-    mode: quiz.mode === 'practico' ? 'practico' : 'teorico',
+    mode: normalizedMode,
     status: quiz.status === 'pending_share' ? 'pending_share' : 'saved',
     selectedTopics: Array.isArray(quiz.selected_topics) ? (quiz.selected_topics as { id: string; name: string }[]) : [],
     questionCount: Number(quiz.question_count || 0),
@@ -125,6 +128,7 @@ export function Dashboard() {
     teacherPrograms,
     teacherQuizzes,
     teacherProgramFilters,
+    teacherSection,
     clearSelectedTopics,
     setSelectedSubject,
     setTeacherPrograms,
@@ -134,6 +138,7 @@ export function Dashboard() {
     setTeacherQuizzes,
     removeTeacherQuiz,
     setTeacherProgramFilters,
+    setTeacherSection,
     startQuiz,
     startQuizPreview,
   } = useAppStore()
@@ -150,7 +155,6 @@ export function Dashboard() {
   const [showCreateExamples, setShowCreateExamples] = useState(false)
   const [showQuizExamples, setShowQuizExamples] = useState(false)
   const [quizSubjectFilter, setQuizSubjectFilter] = useState<string>('all')
-  const [teacherSection, setTeacherSection] = useState<'materias' | 'crear' | 'cuestionarios'>('materias')
   const [performedQuizzes, setPerformedQuizzes] = useState<Record<string, unknown>[]>([])
   const [expandedQuizId, setExpandedQuizId] = useState<number | null>(null)
   const [exportingQuizId, setExportingQuizId] = useState<number | null>(null)
@@ -669,11 +673,12 @@ export function Dashboard() {
                         <select
                           className="border rounded-md px-3 py-2 bg-background text-sm"
                           value={teacherProgramFilters.mode}
-                          onChange={(event) => setTeacherProgramFilters({ mode: event.target.value as '' | 'teorico' | 'practico' })}
+                          onChange={(event) => setTeacherProgramFilters({ mode: event.target.value as '' | 'teorico' | 'practico' | 'mixto' })}
                         >
                           <option value="">Modo (todos)</option>
                           <option value="teorico">Teorico</option>
                           <option value="practico">Practico</option>
+                          <option value="mixto">Mixto</option>
                         </select>
                         <input
                           className="border rounded-md px-3 py-2 bg-background text-sm sm:col-span-2"

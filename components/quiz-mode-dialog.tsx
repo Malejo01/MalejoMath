@@ -14,15 +14,16 @@ import { cn } from '@/lib/utils'
 interface QuizModeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelectMode: (mode: 'teorico' | 'practico') => void
+  onSelectMode: (mode: 'teorico' | 'practico' | 'mixto') => void
   isLoading?: boolean
   title?: string
   description?: string
-  questionCountValue: string
-  onQuestionCountValueChange: (value: string) => void
-  onDecreaseQuestionCount: () => void
-  onIncreaseQuestionCount: () => void
-  isQuestionCountValid: boolean
+  showQuestionCountSelector?: boolean
+  questionCountValue?: string
+  onQuestionCountValueChange?: (value: string) => void
+  onDecreaseQuestionCount?: () => void
+  onIncreaseQuestionCount?: () => void
+  isQuestionCountValid?: boolean
   minQuestionCount?: number
   maxQuestionCount?: number
 }
@@ -46,6 +47,15 @@ const modeCards = [
     border: 'border-orange-200 hover:border-orange-400',
     background: 'from-orange-50 to-amber-50',
   },
+  {
+    mode: 'mixto' as const,
+    title: 'Examen Mixto',
+    description: 'Combina ejercicios teoricos y practicos.',
+    icon: BookOpen,
+    accent: 'from-violet-500 to-fuchsia-400',
+    border: 'border-violet-200 hover:border-violet-400',
+    background: 'from-violet-50 to-fuchsia-50',
+  },
 ]
 
 export function QuizModeDialog({
@@ -55,11 +65,12 @@ export function QuizModeDialog({
   isLoading = false,
   title = 'Elegir tipo de cuestionario',
   description = 'Selecciona si quieres practicar con un examen teorico o practico.',
-  questionCountValue,
+  showQuestionCountSelector = true,
+  questionCountValue = '10',
   onQuestionCountValueChange,
   onDecreaseQuestionCount,
   onIncreaseQuestionCount,
-  isQuestionCountValid,
+  isQuestionCountValid = true,
   minQuestionCount = 5,
   maxQuestionCount = 50,
 }: QuizModeDialogProps) {
@@ -74,6 +85,7 @@ export function QuizModeDialog({
         </DialogHeader>
 
         <div className="px-6 pb-6 space-y-3">
+          {showQuestionCountSelector && (
           <div className="rounded-2xl border-2 border-border/70 bg-muted/20 p-4 space-y-2">
             <p className="text-sm font-semibold text-foreground">Cantidad de preguntas</p>
             <div className="flex items-center gap-2">
@@ -81,7 +93,7 @@ export function QuizModeDialog({
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={onDecreaseQuestionCount}
+                onClick={() => onDecreaseQuestionCount?.()}
                 disabled={isLoading}
                 aria-label="Disminuir cantidad de preguntas"
               >
@@ -93,7 +105,7 @@ export function QuizModeDialog({
                 max={maxQuestionCount}
                 step={1}
                 value={questionCountValue}
-                onChange={(event) => onQuestionCountValueChange(event.target.value)}
+                onChange={(event) => onQuestionCountValueChange?.(event.target.value)}
                 disabled={isLoading}
                 className={cn(
                   'h-10 w-full rounded-md border bg-background px-3 text-center text-base font-bold outline-none',
@@ -106,7 +118,7 @@ export function QuizModeDialog({
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={onIncreaseQuestionCount}
+                onClick={() => onIncreaseQuestionCount?.()}
                 disabled={isLoading}
                 aria-label="Aumentar cantidad de preguntas"
               >
@@ -119,6 +131,7 @@ export function QuizModeDialog({
                 : `Ingresa un numero entero entre ${minQuestionCount} y ${maxQuestionCount}.`}
             </p>
           </div>
+          )}
 
           {modeCards.map(({ mode, title: modeTitle, description: modeDescription, icon: Icon, accent, border, background }) => (
             <Button

@@ -61,7 +61,7 @@ interface AttemptAnswer {
 }
 
 type SubjectFilter = 'all' | 'algebra' | 'analisis' | 'probabilidad'
-type ModeFilter = 'all' | 'teorico' | 'practico'
+type ModeFilter = 'all' | 'teorico' | 'practico' | 'mixto'
 
 function getSubjectKey(subject: string): SubjectFilter {
   const s = subject.toLowerCase()
@@ -354,7 +354,7 @@ export default function HistoryPage() {
                 })}
               </div>
               <div className="flex gap-2">
-                {(['all', 'teorico', 'practico'] as ModeFilter[]).map((m) => (
+                {(['all', 'teorico', 'practico', 'mixto'] as ModeFilter[]).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -366,7 +366,7 @@ export default function HistoryPage() {
                         : 'bg-card/80 border-border text-muted-foreground hover:border-primary/40'
                     )}
                   >
-                    {m === 'all' ? 'Todos los modos' : m === 'teorico' ? 'Teórico' : 'Práctico'}
+                    {m === 'all' ? 'Todos los modos' : m === 'teorico' ? 'Teórico' : m === 'practico' ? 'Práctico' : 'Mixto'}
                   </button>
                 ))}
               </div>
@@ -432,7 +432,7 @@ export default function HistoryPage() {
                                     className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
                                     style={{ backgroundColor: color }}
                                   >
-                                    {attempt.mode === 'teorico' ? 'Teórico' : 'Práctico'}
+                                    {attempt.mode === 'teorico' ? 'Teórico' : attempt.mode === 'practico' ? 'Práctico' : 'Mixto'}
                                   </span>
                                   <span
                                     className={cn(
