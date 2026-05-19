@@ -104,15 +104,9 @@ export interface PedagogyProfile {
   methodology: string
 }
 
-export interface ProgramSubtopic {
-  id: string
-  name: string
-}
-
 export interface ProgramTopic {
   id: string
   name: string
-  subtopics: ProgramSubtopic[]
 }
 
 export interface ProgramUnit {

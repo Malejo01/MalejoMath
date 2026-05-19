@@ -4,23 +4,12 @@ import type {
   TeacherProgram,
   ProgramUnit,
   ProgramTopic,
-  ProgramSubtopic,
   SubjectColorName,
   SubjectIconName,
 } from '@/lib/types'
 
-function normalizeSubtopics(topic: ProgramTopic): ProgramSubtopic[] {
-  if (Array.isArray(topic.subtopics) && topic.subtopics.length > 0) {
-    return topic.subtopics
-  }
-
-  return [
-    {
-      id: `${topic.id}-s-1`,
-      name: topic.name,
-    },
-  ]
-}
+type LegacySubtopic = { id?: string; name?: string }
+type LegacyProgramTopic = ProgramTopic & { subtopics?: LegacySubtopic[] }
 
 function normalizeUnits(units: ProgramUnit[] | unknown): ProgramUnit[] {
   if (!Array.isArray(units)) {
@@ -33,11 +22,33 @@ function normalizeUnits(units: ProgramUnit[] | unknown): ProgramUnit[] {
     return {
       id: unit?.id || `tp-u-${unitIndex + 1}`,
       name: unit?.name || `Unidad ${unitIndex + 1}`,
-      topics: safeTopics.map((topic: ProgramTopic, topicIndex: number) => ({
-        id: topic?.id || `tp-u-${unitIndex + 1}-t-${topicIndex + 1}`,
-        name: topic?.name || `Tema ${topicIndex + 1}`,
-        subtopics: normalizeSubtopics(topic),
-      })),
+      topics: safeTopics.flatMap((topic: LegacyProgramTopic, topicIndex: number) => {
+        if (Array.isArray(topic?.subtopics) && topic.subtopics.length > 0) {
+          return topic.subtopics
+            .map((subtopic, subIndex) => {
+              const name = String(subtopic?.name || '').trim()
+              if (!name) return null
+
+              return {
+                id: String(subtopic?.id || `tp-u-${unitIndex + 1}-t-${topicIndex + 1}-legacy-${subIndex + 1}`),
+                name,
+              }
+            })
+            .filter((value): value is ProgramTopic => value !== null)
+        }
+
+        const name = String(topic?.name || '').trim()
+        if (!name) {
+          return []
+        }
+
+        return [
+          {
+            id: String(topic?.id || `tp-u-${unitIndex + 1}-t-${topicIndex + 1}`),
+            name,
+          },
+        ]
+      }),
     }
   })
 }
@@ -85,14 +96,11 @@ export function teacherProgramToSubject(program: TeacherProgram): Subject {
     units: normalizedUnits.map((unit) => ({
       id: unit.id,
       name: unit.name,
-      topics: unit.topics.flatMap((topic) =>
-        normalizeSubtopics(topic).map((subtopic) => ({
-          id: subtopic.id,
-          name: subtopic.name,
-          group: topic.name,
-          completed: false,
-        }))
-      ),
+      topics: unit.topics.map((topic) => ({
+        id: topic.id,
+        name: topic.name,
+        completed: false,
+      })),
     })),
   }
 }

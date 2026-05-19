@@ -12,8 +12,19 @@ function normalizeMathJaxDelimiters(text: string): string {
   return normalized
 }
 
+function normalizeLogicalNotation(text: string): string {
+  return text
+    .replace(/\\leftrightarrow/g, '↔')
+    .replace(/\\rightarrow/g, '→')
+    .replace(/\\wedge/g, '∧')
+    .replace(/\\vee/g, '∨')
+    .replace(/\\neg\s*/g, '¬')
+    // Recover already-corrupted tokens like "egp" or "eg(q∨r)".
+    .replace(/(^|[\s(])eg(?=[a-zA-Z(])/gi, '$1¬')
+}
+
 function escapeGiftText(text: string): string {
-  return normalizeMathJaxDelimiters(text)
+  return normalizeMathJaxDelimiters(normalizeLogicalNotation(text))
     .replace(/\r\n/g, '\n')
     .replace(/(?<!\\)([~=#{}:])/g, '\\$1')
     .trim()

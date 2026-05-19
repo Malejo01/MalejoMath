@@ -108,27 +108,10 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     return subject.units.map((unit, unitIndex) => ({
       id: unit.id || `u-${unitIndex + 1}`,
       name: unit.name,
-      topics: unit.topics.reduce((acc, topic, topicIndex) => {
-        const groupName = topic.group || topic.name
-        const existing = acc.find((group) => group.name === groupName)
-
-        const subtopic = {
-          id: topic.id,
-          name: topic.name,
-        }
-
-        if (existing) {
-          existing.subtopics.push(subtopic)
-        } else {
-          acc.push({
-            id: `${unit.id || `u-${unitIndex + 1}`}-t-${topicIndex + 1}`,
-            name: groupName,
-            subtopics: [subtopic],
-          })
-        }
-
-        return acc
-      }, [] as ProgramUnit[number]['topics']),
+      topics: unit.topics.map((topic, topicIndex) => ({
+        id: topic.id || `${unit.id || `u-${unitIndex + 1}`}-t-${topicIndex + 1}`,
+        name: topic.name,
+      })),
     }))
   }
 
@@ -189,6 +172,8 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject: subject.name,
+          subjectSource: subject.source || 'core',
+          subjectUnits: subject.units || [],
           topics: selectedTopics,
           mode,
           questionCount,
@@ -537,7 +522,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
                     colors.borderLight,
                     'hover:border-muted-foreground/50'
                   )}
-                  aria-label={isExpanded ? 'Ocultar subtemas' : 'Mostrar subtemas'}
+                  aria-label={isExpanded ? 'Ocultar temas' : 'Mostrar temas'}
                 >
                   {isExpanded ? (
                     <ChevronUp className="w-5 h-5" />
@@ -589,7 +574,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
                                 colors.borderLight,
                                 'hover:border-muted-foreground/50'
                               )}
-                              aria-label={isGroupExpanded ? 'Ocultar subtemas' : 'Mostrar subtemas'}
+                              aria-label={isGroupExpanded ? 'Ocultar temas' : 'Mostrar temas'}
                             >
                               {isGroupExpanded ? (
                                 <ChevronUp className="w-4 h-4" />

@@ -14,7 +14,6 @@ const parsedProgramSchema = z.object({
       topics: z.array(
         z.object({
           name: z.string().min(1),
-          subtopics: z.array(z.string().min(1)).min(1),
         })
       ).min(1),
     })
@@ -38,6 +37,17 @@ function extractCurriculumSection(rawText: string): string {
     /contenidos?\s+del\s+programa/i,
     /contenidos?\s+m[ií]nimos/i,
     /programa\s+anal[ií]tico/i,
+    /programa\s+anal[ií]tico\s+de\s+contenidos?/i,
+    /estructura\s+curricular/i,
+    /unidades?\s+did[aá]cticas?/i,
+    /organizaci[oó]n\s+de\s+los\s+contenidos?\s+anuales?/i,
+    /ejes?\s+tem[aá]ticos?\s+organizadores?/i,
+    /bloques?\s+tem[aá]ticos?/i,
+    /secuenciaci[oó]n\s+de\s+contenidos?/i,
+    /saberes?\s+prioritarios/i,
+    /ejes?\s+de\s+aprendizaje/i,
+    /unidades?\s+de\s+aprendizaje\s+integradas?/i,
+    /nodos?\s+tem[aá]ticos?/i,
     /temario/i,
     /unidades?\s+tem[aá]ticas?/i,
     /^contenidos?$/i,
@@ -50,6 +60,9 @@ function extractCurriculumSection(rawText: string): string {
     /^cronograma/i,
     /^objetivos?/i,
     /^correlativas?/i,
+    /^fundamentaci[oó]n/i,
+    /^propuesta\s+metodol[oó]gica/i,
+    /^criterios?\s+de\s+evaluaci[oó]n/i,
   ]
 
   let startIndex = lines.findIndex((line) => startMatchers.some((matcher) => matcher.test(line)))
@@ -73,10 +86,10 @@ function isLikelyUnitLine(line: string): boolean {
   return /^(unidad|unit|m[oó]dulo|modulo|eje|bloque)\s*\d*/i.test(line)
 }
 
-function splitTopicAndSubtopics(line: string): { topicName: string; subtopics: string[] } {
+function splitTopicsFromLine(line: string): string[] {
   const cleaned = line.replace(/^[\-•*\d\.\)\s]+/, '').trim()
   if (cleaned.length === 0) {
-    return { topicName: 'Tema', subtopics: ['Contenido principal'] }
+    return ['Tema principal']
   }
 
   const parts = cleaned
@@ -85,13 +98,10 @@ function splitTopicAndSubtopics(line: string): { topicName: string; subtopics: s
     .filter((part) => part.length > 0)
 
   if (parts.length <= 1) {
-    return { topicName: cleaned, subtopics: [cleaned] }
+    return [cleaned]
   }
 
-  return {
-    topicName: parts[0],
-    subtopics: parts,
-  }
+  return parts
 }
 
 function parseHeuristicProgram(rawText: string): ParsedProgram {
@@ -123,11 +133,10 @@ function parseHeuristicProgram(rawText: string): ParsedProgram {
       units.push(currentUnit)
     }
 
-    const { topicName, subtopics } = splitTopicAndSubtopics(line)
-    currentUnit.topics.push({
-      name: topicName,
-      subtopics,
-    })
+    const topics = splitTopicsFromLine(line)
+    for (const topic of topics) {
+      currentUnit.topics.push({ name: topic })
+    }
   }
 
   const sanitizedUnits = units
@@ -143,8 +152,8 @@ function parseHeuristicProgram(rawText: string): ParsedProgram {
 
   const cleaned = Array.from(new Set(lines)).slice(0, 20)
 
-  const subtopics = cleaned
-    .slice(0, 12)
+  const topics = cleaned
+    .slice(0, 20)
     .map((line) => line.replace(/^[\-*\d\.\)\s]+/, '').trim())
     .filter((line) => line.length > 0)
 
@@ -152,15 +161,31 @@ function parseHeuristicProgram(rawText: string): ParsedProgram {
     units: [
       {
         name: 'Unidad 1',
-        topics: [
-          {
-            name: 'Temas extraidos del programa',
-            subtopics: subtopics.length > 0 ? subtopics : ['Contenido principal'],
-          },
-        ],
+        topics: topics.length > 0 ? topics.map((name) => ({ name })) : [{ name: 'Temas extraidos del programa' }],
       },
     ],
   }
+}
+
+function normalizeDocMimeType(file: File): string {
+  const lowerName = file.name.toLowerCase()
+  if (lowerName.endsWith('.doc') || file.type === 'application/msword') {
+    return 'application/msword'
+  }
+  if (lowerName.endsWith('.png') || file.type === 'image/png') {
+    return 'image/png'
+  }
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || file.type === 'image/jpeg') {
+    return 'image/jpeg'
+  }
+  if (lowerName.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  }
+  if (lowerName.endsWith('.pdf')) {
+    return 'application/pdf'
+  }
+
+  return file.type
 }
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
@@ -207,6 +232,44 @@ async function extractTextFromDocx(buffer: Buffer): Promise<string> {
   return (result.value || '').trim()
 }
 
+async function extractTextFromDoc(buffer: Buffer): Promise<string> {
+  const module = await import('word-extractor')
+  const WordExtractor = module.default
+  const extractor = new WordExtractor()
+  const document = await extractor.extract(buffer)
+  return String(document.getBody() || '').trim()
+}
+
+async function extractTextFromImage(buffer: Buffer): Promise<string> {
+  const tesseract = await import('tesseract.js')
+  const result = await tesseract.recognize(buffer, 'spa+eng')
+  return String(result?.data?.text || '').trim()
+}
+
+function estimateConfidence(parsed: ParsedProgram, extractionMethod: 'ai' | 'heuristic') {
+  const unitCount = parsed.units.length
+  const topicCount = parsed.units.reduce((acc, unit) => acc + unit.topics.length, 0)
+  const genericTopicCount = parsed.units.reduce(
+    (acc, unit) =>
+      acc +
+      unit.topics.filter((topic) => /^(tema|contenido|unidad)\s*(principal|\d+)?$/i.test(topic.name.trim())).length,
+    0
+  )
+
+  let score = extractionMethod === 'ai' ? 0.86 : 0.62
+  if (unitCount >= 2) score += 0.05
+  if (topicCount >= 8) score += 0.05
+  if (genericTopicCount > 0) score -= Math.min(0.18, genericTopicCount * 0.03)
+
+  const confidence = Math.max(0.3, Math.min(0.98, score))
+  return {
+    confidence,
+    lowConfidence: confidence < 0.82,
+    unitCount,
+    topicCount,
+  }
+}
+
 async function requireTeacher(userId: string) {
   const rows = await sql`
     SELECT COALESCE(role, 'student') AS role
@@ -225,10 +288,6 @@ function normalizeUnits(parsed: ParsedProgram) {
     topics: unit.topics.map((topic, topicIndex) => ({
       id: `tp-u-${unitIndex + 1}-t-${topicIndex + 1}`,
       name: topic.name,
-      subtopics: topic.subtopics.map((subtopic, subIndex) => ({
-        id: `tp-u-${unitIndex + 1}-t-${topicIndex + 1}-s-${subIndex + 1}`,
-        name: subtopic,
-      })),
     })),
   }))
 }
@@ -256,10 +315,15 @@ export async function POST(req: Request) {
     const validTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'image/png',
+      'image/jpeg',
     ]
 
-    if (!validTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Solo se aceptan PDF y DOCX' }, { status: 400 })
+    const normalizedMimeType = normalizeDocMimeType(file)
+
+    if (!validTypes.includes(normalizedMimeType)) {
+      return NextResponse.json({ error: 'Solo se aceptan PDF, DOCX, DOC, PNG y JPG' }, { status: 400 })
     }
 
     const maxSizeBytes = 5 * 1024 * 1024
@@ -271,10 +335,14 @@ export async function POST(req: Request) {
     const fileBuffer = Buffer.from(arrayBuffer)
 
     let extractedText = ''
-    if (file.type === 'application/pdf') {
+    if (normalizedMimeType === 'application/pdf') {
       extractedText = await extractTextFromPdf(fileBuffer)
-    } else {
+    } else if (normalizedMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       extractedText = await extractTextFromDocx(fileBuffer)
+    } else if (normalizedMimeType === 'application/msword') {
+      extractedText = await extractTextFromDoc(fileBuffer)
+    } else {
+      extractedText = await extractTextFromImage(fileBuffer)
     }
 
     if (!extractedText || extractedText.length < 100) {
@@ -289,20 +357,21 @@ export async function POST(req: Request) {
     const clippedSection = curriculumSection.slice(0, 15000)
 
     let parsedProgram: ParsedProgram
+    let extractionMethod: 'ai' | 'heuristic' = 'ai'
 
     try {
       const { object } = await generateObject({
         model: google('gemini-2.5-flash'),
         schema: parsedProgramSchema,
         schemaName: 'programStructure',
-        schemaDescription: 'Estructura curricular con unidades, temas y subtemas',
+        schemaDescription: 'Estructura curricular con unidades y temas',
         system: 'Eres un asistente academico. Extrae una estructura curricular jerarquica precisa.',
         prompt: `Analiza el programa y devuelve la estructura curricular en este orden de prioridad:
 1) Unidades
 2) Temas dentro de cada unidad
-3) Subtemas (si un tema tiene items separados por coma, usar esos items como subtemas)
 
-Busca primero la seccion equivalente a: "Contenidos de la Materia", "Contenidos del Programa", "Temario" o "Unidades Tematicas".
+Busca primero la seccion equivalente a: "Programa Analitico de Contenidos", "Estructura Curricular", "Contenidos del Programa", "Temario", "Unidades Didacticas", "Ejes de Aprendizaje", "Saberes Prioritarios" o "Bloques Tematicos".
+Normaliza cualquier nombre de agrupador (eje, bloque, modulo, nodo) como "Unidad".
 Si hay conflicto entre secciones, prioriza la seccion de contenidos.
 No inventes unidades ni temas que no aparezcan en el documento.
 
@@ -318,6 +387,7 @@ ${clippedText}`,
       parsedProgram = parsedProgramSchema.parse(object)
     } catch {
       parsedProgram = parseHeuristicProgram(clippedText)
+      extractionMethod = 'heuristic'
     }
 
     try {
@@ -346,12 +416,20 @@ ${clippedText}`,
     }
 
     const normalizedUnits = normalizeUnits(parsedProgram)
+    const quality = estimateConfidence(parsedProgram, extractionMethod)
 
     return NextResponse.json({
       sourceFileName: file.name,
-      sourceMimeType: file.type,
+      sourceMimeType: normalizedMimeType,
       sourceFileSizeBytes: file.size,
       units: normalizedUnits,
+      extractionMethod,
+      extractionConfidence: quality.confidence,
+      lowConfidence: quality.lowConfidence,
+      summary: {
+        unitCount: quality.unitCount,
+        topicCount: quality.topicCount,
+      },
     })
   } catch (error) {
     return NextResponse.json(
