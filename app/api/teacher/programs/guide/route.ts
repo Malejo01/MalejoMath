@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+﻿import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -441,7 +441,7 @@ async function saveGlobalPattern(signature: unknown, confidence: number) {
 
 async function requireTeacher(userId: string) {
   const rows = await sql`
-    SELECT COALESCE(role, 'student') AS role
+    SELECT COALESCE(role, 'ALUMNO') AS role
     FROM users
     WHERE id = ${userId}
     LIMIT 1
@@ -451,7 +451,8 @@ async function requireTeacher(userId: string) {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
+  const session = await auth()
+  const userId = session?.user?.id ?? null
 
   if (!userId) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

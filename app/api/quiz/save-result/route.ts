@@ -1,20 +1,21 @@
 import { sql } from '@/lib/db'
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
+import { debugLog } from '@/lib/utils'
 
 export async function POST(req: Request) {
   try {
-    console.log('[v0] Save-result API called')
+    debugLog('[v0] Save-result API called')
     
-    const { userId } = await auth()
-    console.log('[v0] Clerk userId:', userId)
+    const session = await auth()
+    const userId = session?.user?.id ?? null
     
     if (!userId) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
     const body = await req.json()
-    console.log('[v0] Request body received, subject:', body.subject)
+    debugLog('[v0] Request body received, subject:', body.subject)
     const {
       subject,
       mode,
@@ -25,22 +26,20 @@ export async function POST(req: Request) {
       answers
     } = body
 
-    // 1. Verificar/crear usuario en nuestra DB (id = clerk_id)
+    const cleanSubject = subject || 'Matemática'
+
+    // 1. Verificar/crear usuario en nuestra DB
+    // The user is upserted at sign-in time in auth.ts, so this is a safety net.
     const existingUser = await sql`
       SELECT id FROM users WHERE id = ${userId}
     `
-    console.log('[v0] Existing user:', existingUser)
-    
+
     if (existingUser.length === 0) {
-      // Obtener email del usuario de Clerk
-      const user = await currentUser()
-      const email = user?.emailAddresses?.[0]?.emailAddress || ''
-      const displayName = user?.firstName || user?.username || ''
-      
-      console.log('[v0] Creating new user with email:', email)
+      // Fallback: create minimal user row if somehow missing
       await sql`
-        INSERT INTO users (id, email, display_name, created_at, updated_at)
-        VALUES (${userId}, ${email}, ${displayName}, NOW(), NOW())
+        INSERT INTO users (id, email, created_at, updated_at)
+        VALUES (${userId}, '', NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
       `
     }
 
@@ -48,8 +47,13 @@ export async function POST(req: Request) {
     const incorrectAnswers = totalQuestions - correctAnswers
     const passed = score >= 6
 
+    // Map topics to a clean array of strings (names) for the quiz_attempts table
+    const topicsStrings: string[] = Array.isArray(topics)
+      ? topics.map((t) => (typeof t === 'string' ? t : String(t?.name || t?.id || '')))
+      : [typeof topics === 'string' ? topics : String(topics?.name || topics?.id || '')]
+
     // 3. Crear el quiz_attempt
-    console.log('[v0] Creating quiz attempt...')
+    debugLog('[v0] Creating quiz attempt...')
     const quizAttempt = await sql`
       INSERT INTO quiz_attempts (
         user_id, subject, mode, topics, total_questions, 
@@ -57,17 +61,17 @@ export async function POST(req: Request) {
         started_at, completed_at
       )
       VALUES (
-        ${userId}, ${subject}, ${mode}, ${topics}, ${totalQuestions}, 
+        ${userId}, ${cleanSubject}, ${mode}, ${topicsStrings}, ${totalQuestions}, 
         ${correctAnswers}, ${incorrectAnswers}, ${score}, ${passed},
         NOW(), NOW()
       )
       RETURNING id
     `
     const quizAttemptId = quizAttempt[0].id
-    console.log('[v0] Quiz attempt created with ID:', quizAttemptId)
+    debugLog('[v0] Quiz attempt created with ID:', quizAttemptId)
 
     // 4. Guardar cada respuesta
-    console.log('[v0] Saving', answers.length, 'answers...')
+    debugLog('[v0] Saving', answers.length, 'answers...')
     for (let i = 0; i < answers.length; i++) {
       const answer = answers[i]
       await sql`
@@ -98,7 +102,7 @@ export async function POST(req: Request) {
         )
       `
     }
-    console.log('[v0] All answers saved')
+    debugLog('[v0] All answers saved')
 
     // 5. Actualizar topic_mastery si la nota es >= 6
     if (score >= 6) {
@@ -111,7 +115,7 @@ export async function POST(req: Request) {
         // Verificar si ya existe un registro para este tema
         const existing = await sql`
           SELECT id, highest_score, attempts_count FROM topic_mastery
-          WHERE user_id = ${userId} AND subject = ${subject} AND topic_id = ${topicId}
+          WHERE user_id = ${userId} AND subject = ${cleanSubject} AND topic_id = ${topicId}
         `
         
         if (existing.length > 0) {
@@ -139,7 +143,7 @@ export async function POST(req: Request) {
               attempts_count, last_attempt_at, created_at, updated_at
             )
             VALUES (
-              ${userId}, ${subject}, ${topicId}, ${topicName}, ${score}, 
+              ${userId}, ${cleanSubject}, ${topicId}, ${topicName}, ${score}, 
               1, NOW(), NOW(), NOW()
             )
           `
@@ -147,7 +151,7 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log('[v0] Save completed successfully')
+    debugLog('[v0] Save completed successfully')
     return NextResponse.json({ 
       success: true, 
       quizAttemptId,

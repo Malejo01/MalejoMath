@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+﻿import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { generateObject } from 'ai'
@@ -272,7 +272,7 @@ function estimateConfidence(parsed: ParsedProgram, extractionMethod: 'ai' | 'heu
 
 async function requireTeacher(userId: string) {
   const rows = await sql`
-    SELECT COALESCE(role, 'student') AS role
+    SELECT COALESCE(role, 'ALUMNO') AS role
     FROM users
     WHERE id = ${userId}
     LIMIT 1
@@ -293,7 +293,8 @@ function normalizeUnits(parsed: ParsedProgram) {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
+  const session = await auth()
+  const userId = session?.user?.id ?? null
 
   if (!userId) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

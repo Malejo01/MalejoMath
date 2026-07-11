@@ -7,12 +7,13 @@ import { useAppStore } from '@/lib/store'
 import { StreakBadge } from './streak-badge'
 import { MathBackground } from './math-background'
 import { LaTeXRenderer } from './latex-renderer'
-import { Home, RotateCcw, TrendingUp, TrendingDown, Sparkles, Trophy, XCircle, CheckCircle, ChevronDown, ChevronUp, AlertCircle, Loader2, Lightbulb } from 'lucide-react'
+import { Home, RotateCcw, TrendingUp, TrendingDown, Sparkles, Trophy, XCircle, CheckCircle, ChevronDown, ChevronUp, AlertCircle, Loader2, Lightbulb, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import confetti from 'canvas-confetti'
 import type { Answer } from '@/lib/types'
 import { QuizModeDialog } from './quiz-mode-dialog'
-import { useAuth } from '@clerk/nextjs'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 
 export function ResultsScreen() {
   const { currentQuiz, userProgress, resetQuiz, setActiveView, startQuiz } = useAppStore()
@@ -23,8 +24,11 @@ export function ResultsScreen() {
   const [explanations, setExplanations] = useState<Record<string, string>>({})
   const [isRetrying, setIsRetrying] = useState(false)
   const [showRetryModal, setShowRetryModal] = useState(false)
-  const { isSignedIn } = useAuth()
+  const { data: session, status } = useSession()
+  const isSignedIn = status === 'authenticated'
+  const isAlumno = session?.user?.role === 'ALUMNO'
   const hasSavedRef = useRef(false)
+  const router = useRouter()
 
   const results = useMemo(() => {
     const correctAnswers = answers.filter(a => a.isCorrect)
@@ -176,6 +180,11 @@ export function ResultsScreen() {
 
   const handleGoHome = () => {
     resetQuiz()
+  }
+
+  const handleGoToHistory = () => {
+    resetQuiz()
+    router.push('/history')
   }
 
   return (
@@ -439,36 +448,48 @@ export function ResultsScreen() {
 
       {/* Fixed Action Buttons */}
       <div className="fixed bottom-0 left-0 right-0 z-20 border-t-2 border-border bg-card px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,23,42,0.12)]">
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            onClick={() => setShowRetryModal(true)}
-            disabled={isRetrying}
-            className="flex-1 h-14 gap-2 rounded-2xl border-2 font-bold"
-          >
-            {isRetrying ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Generando...
-              </>
-            ) : (
-              <>
-                <RotateCcw className="w-5 h-5" />
-                Reintentar
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={handleGoHome}
-            className={cn(
-              'flex-1 h-14 gap-2 rounded-2xl font-bold shadow-lg',
-              'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)]',
-              'hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all'
-            )}
-          >
-            <Home className="w-5 h-5" />
-            Continuar
-          </Button>
+        <div className="max-w-md mx-auto space-y-3">
+          {isAlumno && (
+            <Button
+              variant="outline"
+              onClick={handleGoToHistory}
+              className="w-full h-12 gap-2 rounded-2xl border-2 font-bold text-primary border-primary hover:bg-primary/5"
+            >
+              <History className="w-5 h-5" />
+              Ver mi Historial
+            </Button>
+          )}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowRetryModal(true)}
+              disabled={isRetrying}
+              className="flex-1 h-14 gap-2 rounded-2xl border-2 font-bold"
+            >
+              {isRetrying ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-5 h-5" />
+                  Reintentar
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleGoHome}
+              className={cn(
+                'flex-1 h-14 gap-2 rounded-2xl font-bold shadow-lg',
+                'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)]',
+                'hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all'
+              )}
+            >
+              <Home className="w-5 h-5" />
+              Continuar
+            </Button>
+          </div>
         </div>
       </div>
 

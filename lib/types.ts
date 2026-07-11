@@ -84,16 +84,39 @@ export interface WeakPoint {
   count: number
 }
 
-export interface Attempt {
+export interface QuizAttempt {
   id: string
   subject: string
-  score: number
-  type: 'teorico' | 'practico'
+  mode: string
   topics: string[]
-  createdAt: string
+  total_questions: number
+  correct_answers: number
+  score: number
+  completed_at: string
 }
 
-export type UserRole = 'student' | 'teacher'
+export interface TopicMastery {
+  subject: string
+  topic_id: string
+  topic_name: string
+  max_score: number
+  attempts_count: number
+  last_attempt_at: string
+}
+
+export interface AttemptAnswer {
+  id: string
+  question_id: string
+  question_text: string
+  options: string[]
+  selected_answer: number
+  correct_answer: number
+  is_correct: boolean
+  explanation: string
+  topic_name: string
+}
+
+export type UserRole = 'ALUMNO' | 'DOCENTE'
 
 export interface PedagogyProfile {
   level: string

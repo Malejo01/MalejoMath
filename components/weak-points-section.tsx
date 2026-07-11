@@ -152,14 +152,14 @@ export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
                       'border-2 border-orange-200 shadow-sm'
                     )}
                   >
-                    <span className="text-foreground font-medium">{getTopicName(wp.topic)}</span>
+                    <span className="text-foreground font-medium">{wp.topicName || getTopicName(wp.topic)}</span>
                     <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold">
                       {wp.count}
                     </span>
                     <button
                       onClick={() => removeWeakPoint(wp.topic)}
                       className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
-                      aria-label={`Eliminar ${getTopicName(wp.topic)} de temas a reforzar`}
+                      aria-label={`Eliminar ${wp.topicName || getTopicName(wp.topic)} de temas a reforzar`}
                     >
                       <X className="w-4 h-4" />
                     </button>

@@ -6,8 +6,8 @@ export const sql = neon(process.env.DATABASE_URL!)
 export interface DbUser {
   id: string
   email: string
-  display_name: string
-  role: 'student' | 'teacher'
+  name: string | null
+  role: 'ALUMNO' | 'DOCENTE' | null
   created_at: Date
   updated_at: Date
 }

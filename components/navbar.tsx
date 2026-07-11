@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { GraduationCap, LogIn, ClipboardList } from 'lucide-react'
-import { SignInButton, Show, UserButton, useAuth } from '@clerk/nextjs'
+import { useEffect, useState, useRef } from 'react'
+import { GraduationCap, LogIn, ClipboardList, LogOut, ChevronDown } from 'lucide-react'
+import { useSession, signIn, signOut } from 'next-auth/react'
 import { StreakBadge } from './streak-badge'
 import { useAppStore } from '@/lib/store'
 import Link from 'next/link'
@@ -11,8 +11,22 @@ import type { UserRole } from '@/lib/types'
 
 export function Navbar() {
   const { userProgress, userProfile, setUserProfile, setUserRole } = useAppStore()
-  const { isSignedIn } = useAuth()
+  const { data: session, status, update: updateSession } = useSession()
+  const isSignedIn = status === 'authenticated'
   const [isUpdatingRole, setIsUpdatingRole] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (!isSignedIn) return
@@ -54,6 +68,8 @@ export function Navbar() {
 
       setUserProfile(data.profile)
       setUserRole(data.profile.role)
+      // Refresh the JWT so the new role is reflected in the session
+      await updateSession()
     } catch {
       // keep current role state on failure
     } finally {
@@ -86,28 +102,31 @@ export function Navbar() {
 
           <div className="h-8 w-[1px] bg-border/50 mx-1 hidden xs:block" />
 
-          <Show when="signed-out">
-            <SignInButton mode="modal">
-              <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-md hover:shadow-lg hover:bg-primary/90 transition-all active:scale-95">
-                <LogIn className="w-4 h-4" />
-                <span>Ingresar</span>
-              </button>
-            </SignInButton>
-          </Show>
+          {/* Signed-out state */}
+          {!isSignedIn && (
+            <button
+              onClick={() => signIn('google')}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-md hover:shadow-lg hover:bg-primary/90 transition-all active:scale-95"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Ingresar</span>
+            </button>
+          )}
 
-          <Show when="signed-in">
+          {/* Signed-in state */}
+          {isSignedIn && (
             <div className="flex items-center gap-3">
               <Select
-                value={userProfile?.role || 'student'}
+                value={userProfile?.role ?? ''}
                 onValueChange={(value) => handleRoleChange(value as UserRole)}
                 disabled={isUpdatingRole}
               >
                 <SelectTrigger className="h-9 w-[130px] rounded-xl bg-secondary border-border/60">
-                  <SelectValue placeholder="Modo" />
+                  <SelectValue placeholder="Rol" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="student">Alumno</SelectItem>
-                  <SelectItem value="teacher">Docente</SelectItem>
+                  <SelectItem value="ALUMNO">Alumno</SelectItem>
+                  <SelectItem value="DOCENTE">Docente</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -117,20 +136,49 @@ export function Navbar() {
                   <span className="hidden sm:inline">Historial Evaluaciones</span>
                 </button>
               </Link>
-              
-              <UserButton 
-                appearance={{
-                  elements: {
-                    userButtonAvatarBox: "w-9 h-9 border-2 border-primary/20 hover:border-primary transition-colors",
-                    userButtonTrigger: "focus:shadow-none focus:outline-none"
-                  }
-                }}
-                afterSignOutUrl="/"
-              />
+
+              {/* User avatar + dropdown */}
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setUserMenuOpen((o) => !o)}
+                  className="flex items-center gap-2 rounded-xl border border-border/50 bg-secondary px-2 py-1.5 hover:bg-secondary/80 transition-all"
+                  aria-label="Menú de usuario"
+                >
+                  {session?.user?.image ? (
+                    <img
+                      src={session.user.image}
+                      alt={session.user.name ?? 'Usuario'}
+                      className="w-7 h-7 rounded-full border-2 border-primary/20"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                      {session?.user?.name?.[0]?.toUpperCase() ?? 'U'}
+                    </div>
+                  )}
+                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+
+                {userMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-card border border-border/50 rounded-xl shadow-lg py-1 z-50">
+                    <div className="px-3 py-2 border-b border-border/40">
+                      <p className="text-sm font-medium text-foreground truncate">{session?.user?.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{session?.user?.email}</p>
+                    </div>
+                    <button
+                      onClick={() => signOut({ callbackUrl: '/' })}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Cerrar sesión
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </Show>
+          )}
         </div>
       </div>
     </header>
   )
 }
+

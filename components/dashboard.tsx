@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAppStore } from '@/lib/store'
@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Navbar } from './navbar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,8 +50,10 @@ import {
   ChevronUp,
   X,
   Download,
+  Sparkles,
+  CheckCircle,
 } from 'lucide-react'
-import { useAuth } from '@clerk/nextjs'
+import { useSession } from 'next-auth/react'
 import { TeacherProgramUploadModal } from './teacher-program-upload-modal'
 import { useToast } from '@/hooks/use-toast'
 import { exportQuizToMoodleGift } from '@/lib/moodle-export'
@@ -131,6 +134,7 @@ export function Dashboard() {
     teacherSection,
     clearSelectedTopics,
     setSelectedSubject,
+    setActiveView,
     setTeacherPrograms,
     addTeacherProgram,
     updateTeacherProgram,
@@ -142,7 +146,8 @@ export function Dashboard() {
     startQuiz,
     startQuizPreview,
   } = useAppStore()
-  const { isSignedIn } = useAuth()
+  const { data: session, status } = useSession()
+  const isSignedIn = status === 'authenticated'
   const { toast } = useToast()
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null)
@@ -162,10 +167,10 @@ export function Dashboard() {
   const [canScrollMySubjectsLeft, setCanScrollMySubjectsLeft] = useState(false)
   const [canScrollMySubjectsRight, setCanScrollMySubjectsRight] = useState(false)
 
-  const isTeacher = userProfile?.role === 'teacher'
+  const isTeacher = userProfile?.role === 'DOCENTE'
   const teacherSubjects = teacherPrograms.map((program) => teacherProgramToSubject(program))
-  const studentSubjects = [...subjects, ...teacherSubjects]
-  const teacherAvailableSubjects = [...teacherSubjects, ...subjects]
+  const studentSubjects = teacherSubjects
+  const teacherAvailableSubjects = teacherSubjects
 
   useEffect(() => {
     clearSelectedTopics()
@@ -195,7 +200,7 @@ export function Dashboard() {
         }
 
         const normalizedPrograms = (Array.isArray(data.programs) ? data.programs : [])
-          .map((program) => normalizeTeacherProgram(program as TeacherProgramApiShape))
+          .map((program: any) => normalizeTeacherProgram(program as TeacherProgramApiShape))
 
         setTeacherPrograms(normalizedPrograms)
       } catch {
@@ -215,75 +220,73 @@ export function Dashboard() {
   const selectedSubject = (isTeacher ? teacherAvailableSubjects : studentSubjects).find((subject) => subject.id === activeSubject)
 
   useEffect(() => {
-    if (!isTeacher) {
-      setTeacherQuizzes([])
-      setPerformedQuizzes([])
-      return
-    }
+    if (!isSignedIn) return
 
     let isMounted = true
 
-    const loadSubjectQuizzes = async () => {
+    const loadData = async () => {
       try {
-        const quizzesQuery = new URLSearchParams()
-        if (teacherProgramFilters.mode) quizzesQuery.set('mode', teacherProgramFilters.mode)
-        if (teacherProgramFilters.createdAfter) quizzesQuery.set('createdAfter', teacherProgramFilters.createdAfter)
+        if (isTeacher) {
+          const quizzesQuery = new URLSearchParams()
+          if (teacherProgramFilters.mode) quizzesQuery.set('mode', teacherProgramFilters.mode)
+          if (teacherProgramFilters.createdAfter) quizzesQuery.set('createdAfter', teacherProgramFilters.createdAfter)
 
-        if (teacherSection !== 'cuestionarios' && selectedSubject?.programId) {
-          quizzesQuery.set('programId', String(selectedSubject.programId))
-        } else if (teacherSection === 'cuestionarios' && quizSubjectFilter.startsWith('teacher-')) {
-          quizzesQuery.set('programId', quizSubjectFilter.replace('teacher-', ''))
-        } else if (teacherSection === 'cuestionarios' && quizSubjectFilter !== 'all') {
-          const filteredExample = subjects.find((subject) => subject.id === quizSubjectFilter)
-          if (filteredExample) {
-            quizzesQuery.set('subject', filteredExample.name)
+          if (teacherSection !== 'cuestionarios' && selectedSubject?.programId) {
+            quizzesQuery.set('programId', String(selectedSubject.programId))
+          } else if (teacherSection === 'cuestionarios' && quizSubjectFilter.startsWith('teacher-')) {
+            quizzesQuery.set('programId', quizSubjectFilter.replace('teacher-', ''))
           }
-        }
 
-        const historyQuery = new URLSearchParams()
-        if (teacherProgramFilters.mode) historyQuery.set('mode', teacherProgramFilters.mode)
-        if (teacherProgramFilters.createdAfter) historyQuery.set('createdAfter', teacherProgramFilters.createdAfter)
+          const historyQuery = new URLSearchParams()
+          if (teacherProgramFilters.mode) historyQuery.set('mode', teacherProgramFilters.mode)
+          if (teacherProgramFilters.createdAfter) historyQuery.set('createdAfter', teacherProgramFilters.createdAfter)
 
-        if (teacherSection !== 'cuestionarios' && selectedSubject?.programId) {
-          historyQuery.set('subject', selectedSubject.name)
-        } else if (teacherSection === 'cuestionarios' && quizSubjectFilter !== 'all') {
-          if (quizSubjectFilter.startsWith('teacher-')) {
-            const teacherProgramId = Number(quizSubjectFilter.replace('teacher-', ''))
-            const filteredProgram = teacherPrograms.find((program) => program.id === teacherProgramId)
-            if (filteredProgram) {
-              historyQuery.set('subject', filteredProgram.subjectName)
+          if (teacherSection !== 'cuestionarios' && selectedSubject?.programId) {
+            historyQuery.set('subject', selectedSubject.name)
+          } else if (teacherSection === 'cuestionarios' && quizSubjectFilter !== 'all') {
+            if (quizSubjectFilter.startsWith('teacher-')) {
+              const teacherProgramId = Number(quizSubjectFilter.replace('teacher-', ''))
+              const filteredProgram = teacherPrograms.find((program) => program.id === teacherProgramId)
+              if (filteredProgram) {
+                historyQuery.set('subject', filteredProgram.subjectName)
+              }
             }
+          }
+
+          const [savedRes, historyRes] = await Promise.all([
+            fetch(`/api/teacher/quizzes?${quizzesQuery.toString()}`),
+            fetch(`/api/quiz/history?${historyQuery.toString()}`),
+          ])
+
+          const savedData = await savedRes.json()
+          const historyData = await historyRes.json()
+
+          if (!isMounted) return
+
+          if (savedRes.ok) {
+            const normalizedQuizzes = (Array.isArray(savedData.quizzes) ? savedData.quizzes : []).map((quiz: any) => normalizeTeacherQuiz(quiz as Record<string, unknown>))
+            setTeacherQuizzes(normalizedQuizzes)
           } else {
-            const filteredExample = subjects.find((subject) => subject.id === quizSubjectFilter)
-            if (filteredExample) {
-              historyQuery.set('subject', filteredExample.name)
-            }
+            setTeacherQuizzes([])
           }
-        }
 
-        const [savedRes, historyRes] = await Promise.all([
-          fetch(`/api/teacher/quizzes?${quizzesQuery.toString()}`),
-          fetch(`/api/quiz/history?${historyQuery.toString()}`),
-        ])
-
-        const savedData = await savedRes.json()
-        const historyData = await historyRes.json()
-
-        if (!isMounted) {
-          return
-        }
-
-        if (savedRes.ok) {
-          const normalizedQuizzes = (Array.isArray(savedData.quizzes) ? savedData.quizzes : []).map((quiz) => normalizeTeacherQuiz(quiz as Record<string, unknown>))
-          setTeacherQuizzes(normalizedQuizzes)
+          if (historyRes.ok) {
+            setPerformedQuizzes(Array.isArray(historyData.attempts) ? historyData.attempts : [])
+          } else {
+            setPerformedQuizzes([])
+          }
         } else {
-          setTeacherQuizzes([])
-        }
+          // ALUMNO: load all history attempts for recent activity
+          const historyRes = await fetch('/api/quiz/history')
+          const historyData = await historyRes.json()
 
-        if (historyRes.ok) {
-          setPerformedQuizzes(Array.isArray(historyData.attempts) ? historyData.attempts : [])
-        } else {
-          setPerformedQuizzes([])
+          if (!isMounted) return
+
+          if (historyRes.ok) {
+            setPerformedQuizzes(Array.isArray(historyData.attempts) ? historyData.attempts : [])
+          } else {
+            setPerformedQuizzes([])
+          }
         }
       } catch {
         if (isMounted) {
@@ -293,12 +296,12 @@ export function Dashboard() {
       }
     }
 
-    loadSubjectQuizzes()
+    loadData()
 
     return () => {
       isMounted = false
     }
-  }, [isTeacher, teacherSection, quizSubjectFilter, selectedSubject?.programId, selectedSubject?.name, teacherProgramFilters.mode, teacherProgramFilters.createdAfter, teacherPrograms, setTeacherQuizzes])
+  }, [isSignedIn, isTeacher, teacherSection, quizSubjectFilter, selectedSubject?.programId, selectedSubject?.name, teacherProgramFilters.mode, teacherProgramFilters.createdAfter, teacherPrograms, setTeacherQuizzes])
 
   useEffect(() => {
     if (quizSubjectFilter === 'all' || !quizSubjectFilter.startsWith('teacher-')) return
@@ -529,67 +532,121 @@ export function Dashboard() {
 
       <Navbar />
 
+      {/* Welcome header */}
+      <div className="px-4 pt-6 pb-2 text-left">
+        <h1 className="text-2xl font-black text-foreground">
+          {session?.user?.name ? `¡Hola, ${session.user.name.split(' ')[0]}! 👋` : '¡Bienvenido/a! 👋'}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          {isTeacher
+            ? 'Gestioná tus materias, programas y cuestionarios educativos.'
+            : 'Practicá matemática con Inteligencia Artificial basada en tu plan de estudios.'}
+        </p>
+      </div>
+
+      {/* Call to Action Card */}
+      <div className="px-4 py-2">
+        <div className="p-6 rounded-2xl bg-gradient-to-br from-primary via-indigo-600 to-violet-700 text-white shadow-xl relative overflow-hidden">
+          {/* Subtle math-themed geometric decorations */}
+          <div className="absolute right-[-10px] bottom-[-20px] opacity-10 text-9xl font-bold select-none pointer-events-none">
+            f(x)
+          </div>
+          <div className="absolute right-[40px] top-[-10px] opacity-10 text-6xl font-bold select-none pointer-events-none">
+            ∑
+          </div>
+
+          <div className="relative z-10 max-w-[85%] space-y-4">
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-wider mb-2">
+                <Sparkles className="w-3.5 h-3.5" /> Evaluaciones Inteligentes
+              </span>
+              <h2 className="text-xl font-black leading-tight">
+                {isTeacher ? 'Generar Cuestionario' : 'Comenzar a practicar'}
+              </h2>
+              <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
+                {isTeacher
+                  ? 'Diseñá cuestionarios a medida basados en la Currícula Oficial de Salta o subiendo tu propio programa.'
+                  : 'Creá un cuestionario personalizado seleccionando tu grado, materia y temas específicos.'}
+              </p>
+            </div>
+
+            <Button
+              onClick={() => setActiveView('selector')}
+              className="bg-white hover:bg-white/90 text-indigo-700 hover:text-indigo-800 font-bold px-5 py-2.5 rounded-xl shadow-md transition-all duration-200 active:scale-95 flex items-center gap-2 text-sm"
+            >
+              {isTeacher ? 'Generar Cuestionario' : 'Comenzar ahora'}
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <main className="px-4 py-5 pb-8 space-y-5">
         {!isTeacher && (
           <>
+            {/* Stats Row */}
             <div className="grid grid-cols-3 gap-3">
-              <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm">
-                <div className="flex flex-col items-center text-center gap-1">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${currentAverageCard.iconBg}`}>
-                    <AverageIcon className={`w-5 h-5 ${currentAverageCard.iconText}`} />
-                  </div>
-                  <div className="text-lg font-black text-foreground leading-none">
-                    {activeSubject ? selectedSubjectAverage.toFixed(2) : '--'}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground font-semibold leading-tight">
-                    {currentAverageCard.title}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground/80">
-                    {activeSubject ? `${selectedSubjectAttempts} evaluaciones` : 'Sin materia elegida'}
-                  </div>
+              {/* Streak Card */}
+              <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm flex flex-col items-center text-center">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center mb-1.5">
+                  <Sparkles className="w-5 h-5 text-orange-500" />
                 </div>
+                <div className="text-xl font-black text-foreground">{userProgress.streak}</div>
+                <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Racha días</div>
               </Card>
 
-              <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-9 h-9 rounded-xl bg-[var(--analysis-light)] flex items-center justify-center mb-1.5">
-                    <TrendingUp className="w-5 h-5 text-[var(--analysis)]" />
-                  </div>
-                  <div className="text-xl font-black text-foreground">{totalProgress}%</div>
-                  <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Progreso</div>
+              {/* Completed Quizzes Card */}
+              <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm flex flex-col items-center text-center">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center mb-1.5">
+                  <CheckCircle className="w-5 h-5 text-blue-500" />
                 </div>
+                <div className="text-xl font-black text-foreground">{performedQuizzes.length}</div>
+                <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Realizados</div>
               </Card>
 
-              <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-9 h-9 rounded-xl bg-[var(--probability-light)] flex items-center justify-center mb-1.5">
-                    <Target className="w-5 h-5 text-[var(--probability)]" />
-                  </div>
-                  <div className="text-xl font-black text-foreground">{userProgress.weakPoints.length}</div>
-                  <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Reforzar</div>
+              {/* Weak Points Card */}
+              <Card className="p-3 border-2 border-border bg-card/80 backdrop-blur-sm flex flex-col items-center text-center">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-950/40 flex items-center justify-center mb-1.5">
+                  <Target className="w-5 h-5 text-rose-500" />
                 </div>
+                <div className="text-xl font-black text-foreground">{userProgress.weakPoints.length}</div>
+                <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">A Reforzar</div>
               </Card>
             </div>
 
-            <section>
-              <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3 px-1">
-                Materias
-              </h2>
-              <SubjectTabs
-                subjects={studentSubjects}
-                activeSubject={activeSubject}
-                onSelect={(subjectId) => handleSubjectChange(subjectId)}
-              />
-            </section>
-
-            {selectedSubject && (
-              <section className="mt-2 space-y-4">
-                <SubjectContent subject={selectedSubject} />
-              </section>
-            )}
-
+            {/* Weak Points Section */}
             {userProgress.weakPoints.length > 0 && (
               <WeakPointsSection weakPoints={userProgress.weakPoints} />
+            )}
+
+            {/* Recent Activity Section */}
+            {performedQuizzes.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider px-1">
+                  Actividad Reciente
+                </h2>
+                <div className="space-y-2">
+                  {performedQuizzes.slice(0, 5).map((attempt: any) => (
+                    <Card key={attempt.id} className="p-4 border border-border bg-card/80 backdrop-blur-sm flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-sm text-foreground">{attempt.subject}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {attempt.mode === 'teorico' ? 'Teórico' : attempt.mode === 'practico' ? 'Práctico' : 'Mixto'} · {new Date(attempt.completed_at).toLocaleDateString('es-AR')}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className={cn(
+                          "text-lg font-black",
+                          attempt.score >= 6 ? "text-emerald-500 dark:text-emerald-400" : "text-orange-500 dark:text-orange-400"
+                        )}>
+                          {Number(attempt.score).toFixed(1)}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-bold">/10</span>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </section>
             )}
           </>
         )}
@@ -736,21 +793,7 @@ export function Dashboard() {
                     )}
                   </div>
 
-                  {!showOnlyMySubjects && (
-                    <div className="space-y-2">
-                      <Button variant="outline" onClick={() => setShowExamples((prev) => !prev)}>
-                        {showExamples ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                        Ejemplos de materias
-                      </Button>
-                      {showExamples && (
-                        <SubjectTabs
-                          subjects={subjects}
-                          activeSubject={activeSubject}
-                          onSelect={(subjectId) => handleSubjectChange(subjectId)}
-                        />
-                      )}
-                    </div>
-                  )}
+
                 </Card>
               )}
 
@@ -775,24 +818,6 @@ export function Dashboard() {
                         {teacherPrograms.map((program) => renderTeacherProgramCard(program))}
                       </div>
                     )}
-
-                    <div className="space-y-2 pt-1">
-                      <Button
-                        variant="outline"
-                        onClick={() => setShowCreateExamples((prev) => !prev)}
-                      >
-                        {showCreateExamples ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                        Ejemplos de materias
-                      </Button>
-
-                      {showCreateExamples && (
-                        <SubjectTabs
-                          subjects={subjects}
-                          activeSubject={activeSubject}
-                          onSelect={(subjectId) => handleSubjectChange(subjectId)}
-                        />
-                      )}
-                    </div>
                   </div>
 
                   {selectedSubject && (
@@ -827,21 +852,6 @@ export function Dashboard() {
                           {program.subjectName}
                         </Button>
                       ))}
-                    </div>
-
-                    <div className="pt-1 space-y-2">
-                      <Button variant="outline" size="sm" onClick={() => setShowQuizExamples((prev) => !prev)}>
-                        {showQuizExamples ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                        Ejemplos de materias
-                      </Button>
-
-                      {showQuizExamples && (
-                        <SubjectTabs
-                          subjects={subjects}
-                          activeSubject={quizSubjectFilter === 'all' || quizSubjectFilter.startsWith('teacher-') ? null : quizSubjectFilter}
-                          onSelect={(subjectId) => setQuizSubjectFilter(subjectId)}
-                        />
-                      )}
                     </div>
                   </div>
 

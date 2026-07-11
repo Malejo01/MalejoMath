@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { useAuth } from '@clerk/nextjs'
-import { UserButton } from '@clerk/nextjs'
+import { useSession } from 'next-auth/react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MathBackground } from '@/components/math-background'
@@ -27,38 +26,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
-
-interface QuizAttempt {
-  id: string
-  subject: string
-  mode: string
-  topics: string[]
-  total_questions: number
-  correct_answers: number
-  score: number
-  completed_at: string
-}
-
-interface TopicMastery {
-  subject: string
-  topic_id: string
-  topic_name: string
-  max_score: number
-  attempts_count: number
-  last_attempt_at: string
-}
-
-interface AttemptAnswer {
-  id: string
-  question_id: string
-  question_text: string
-  options: string[]
-  selected_answer: number
-  correct_answer: number
-  is_correct: boolean
-  explanation: string
-  topic_name: string
-}
+import type { QuizAttempt, TopicMastery, AttemptAnswer } from '@/lib/types'
 
 type SubjectFilter = 'all' | 'algebra' | 'analisis' | 'probabilidad'
 type ModeFilter = 'all' | 'teorico' | 'practico' | 'mixto'
@@ -97,7 +65,9 @@ const subjectLabel: Record<string, string> = {
 }
 
 export default function HistoryPage() {
-  const { isSignedIn, isLoaded } = useAuth()
+  const { status } = useSession()
+  const isSignedIn = status === 'authenticated'
+  const isLoaded = status !== 'loading'
   const [attempts, setAttempts] = useState<QuizAttempt[]>([])
   const [mastery, setMastery] = useState<TopicMastery[]>([])
   const [loading, setLoading] = useState(true)
@@ -265,14 +235,11 @@ export default function HistoryPage() {
               </div>
             </div>
           </div>
-          <UserButton
-            appearance={{
-              elements: {
-                userButtonAvatarBox: 'w-9 h-9 border-2 border-primary/20 hover:border-primary transition-colors',
-                userButtonTrigger: 'focus:shadow-none focus:outline-none',
-              },
-            }}
-          />
+          <Link href="/">
+            <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/50 bg-secondary text-sm font-medium hover:bg-secondary/80 transition-all">
+              Volver
+            </button>
+          </Link>
         </div>
       </header>
 

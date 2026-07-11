@@ -2,8 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Manrope } from 'next/font/google'
 import { Playfair_Display } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { ClerkProvider } from '@clerk/nextjs'
-import { esES } from '@clerk/localizations'
+import { SessionProvider } from 'next-auth/react'
 import './globals.css'
 
 const manrope = Manrope({ 
@@ -56,10 +55,10 @@ export default function RootLayout({
   return (
     <html lang="es" className="bg-background">
       <body className={`${manrope.variable} ${playfair.variable} font-sans antialiased min-h-screen`}>
-        <ClerkProvider localization={esES}>
+        <SessionProvider>
           {children}
           {process.env.NODE_ENV === 'production' && <Analytics />}
-        </ClerkProvider>
+        </SessionProvider>
       </body>
     </html>
   )

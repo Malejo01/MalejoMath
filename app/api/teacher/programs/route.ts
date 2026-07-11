@@ -1,15 +1,15 @@
-import { auth } from '@clerk/nextjs/server'
+﻿import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import type { PedagogyProfile, ProgramUnit, SubjectColorName, SubjectIconName } from '@/lib/types'
 
-function isTeacherRole(role: unknown): role is 'teacher' {
-  return role === 'teacher'
+function isTeacherRole(role: unknown): boolean {
+  return role === 'DOCENTE'
 }
 
 async function requireTeacher(userId: string) {
   const rows = await sql`
-    SELECT COALESCE(role, 'student') AS role
+    SELECT COALESCE(role, 'ALUMNO') AS role
     FROM users
     WHERE id = ${userId}
     LIMIT 1
@@ -23,7 +23,8 @@ async function requireTeacher(userId: string) {
 }
 
 export async function GET(req: Request) {
-  const { userId } = await auth()
+  const session = await auth()
+  const userId = session?.user?.id ?? null
 
   if (!userId) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
@@ -82,7 +83,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
+  const session = await auth()
+  const userId = session?.user?.id ?? null
 
   if (!userId) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

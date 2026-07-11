@@ -1,5 +1,5 @@
-import { sql } from '@/lib/db'
-import { auth } from '@clerk/nextjs/server'
+﻿import { sql } from '@/lib/db'
+import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 
 export async function GET(
@@ -7,7 +7,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth()
+    const session = await auth()
+    const userId = session?.user?.id ?? null
     
     if (!userId) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })

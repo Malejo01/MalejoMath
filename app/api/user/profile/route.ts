@@ -1,48 +1,36 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import type { UserRole } from '@/lib/types'
 
-async function ensureProfile(userId: string) {
-  const clerkUser = await currentUser()
-  const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
-  const displayName = clerkUser?.firstName || clerkUser?.username || ''
-
-  await sql`
-    INSERT INTO users (id, email, display_name, role, created_at, updated_at)
-    VALUES (${userId}, ${email}, ${displayName}, 'student', NOW(), NOW())
-    ON CONFLICT (id) DO UPDATE
-    SET
-      email = EXCLUDED.email,
-      display_name = EXCLUDED.display_name,
-      updated_at = NOW()
-  `
-
-  const rows = await sql`
-    SELECT id, email, COALESCE(display_name, '') AS display_name, COALESCE(role, 'student') AS role
-    FROM users
-    WHERE id = ${userId}
-    LIMIT 1
-  `
-
-  return rows[0]
-}
-
 export async function GET() {
-  const { userId } = await auth()
+  const session = await auth()
+  const userId = session?.user?.id ?? null
 
   if (!userId) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
   }
 
   try {
-    const profile = await ensureProfile(userId)
+    // User row was upserted at sign-in time by auth.ts; just fetch it.
+    const rows = await sql`
+      SELECT id, email, name, role, is_onboarded
+      FROM users
+      WHERE id = ${userId}
+      LIMIT 1
+    `
+
+    if (rows.length === 0) {
+      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
+    }
+
     return NextResponse.json({
       profile: {
-        id: profile.id,
-        email: profile.email,
-        displayName: profile.display_name,
-        role: profile.role as UserRole,
+        id: rows[0].id,
+        email: rows[0].email,
+        displayName: rows[0].name ?? '',
+        role: (rows[0].role ?? null) as UserRole | null,
+        isOnboarded: rows[0].is_onboarded,
       },
     })
   } catch (error) {
@@ -54,7 +42,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  const { userId } = await auth()
+  const session = await auth()
+  const userId = session?.user?.id ?? null
 
   if (!userId) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
@@ -62,27 +51,30 @@ export async function PATCH(req: Request) {
 
   try {
     const body = await req.json()
-    const role = body?.role as UserRole
+    const role = body?.role as string
 
-    if (role !== 'student' && role !== 'teacher') {
-      return NextResponse.json({ error: 'Rol invalido' }, { status: 400 })
+    if (role !== 'ALUMNO' && role !== 'DOCENTE') {
+      return NextResponse.json({ error: 'Rol inválido. Debe ser ALUMNO o DOCENTE.' }, { status: 400 })
     }
-
-    await ensureProfile(userId)
 
     const rows = await sql`
       UPDATE users
-      SET role = ${role}, updated_at = NOW()
+      SET role = ${role}, is_onboarded = true, updated_at = NOW()
       WHERE id = ${userId}
-      RETURNING id, email, COALESCE(display_name, '') AS display_name, role
+      RETURNING id, email, name, role, is_onboarded
     `
+
+    if (rows.length === 0) {
+      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
+    }
 
     return NextResponse.json({
       profile: {
         id: rows[0].id,
         email: rows[0].email,
-        displayName: rows[0].display_name,
+        displayName: rows[0].name ?? '',
         role: rows[0].role as UserRole,
+        isOnboarded: rows[0].is_onboarded,
       },
     })
   } catch (error) {
@@ -92,3 +84,4 @@ export async function PATCH(req: Request) {
     )
   }
 }
+

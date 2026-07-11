@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -314,7 +314,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     setSelectedQuestionCount(parsedQuestionCount)
     setShowModeDialog(false)
 
-    if (userProfile?.role !== 'teacher') {
+    if (userProfile?.role !== 'DOCENTE') {
       await handleActionSelection('realizar', mode, parsedQuestionCount)
       return
     }
@@ -330,7 +330,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
     const effectiveMode = forcedMode || selectedMode
     const effectiveQuestionCount = forcedQuestionCount || selectedQuestionCount
     if (!effectiveMode || !effectiveQuestionCount) return
-    const useLoadingScreen = userProfile?.role !== 'teacher' || action === 'guardar'
+    const useLoadingScreen = userProfile?.role !== 'DOCENTE' || action === 'guardar'
 
     setIsLoading(true)
     setShowActionDialog(false)
@@ -670,7 +670,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         maxQuestionCount={MAX_QUESTION_COUNT}
       />
 
-      {userProfile?.role === 'teacher' && (
+      {userProfile?.role === 'DOCENTE' && (
         <>
           <QuizActionDialog
             open={showActionDialog}

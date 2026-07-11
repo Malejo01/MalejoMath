@@ -242,6 +242,7 @@ async function generateQuizBatchWithFallback({
   previousNote,
   pedagogyNote,
   specialistRole,
+  difficulty,
 }: {
   subject: string
   curriculum: string
@@ -251,9 +252,30 @@ async function generateQuizBatchWithFallback({
   previousNote: string
   pedagogyNote: string
   specialistRole: string
+  difficulty: string
 }) {
+  let difficultyInstructions = ''
+  if (difficulty === 'basico') {
+    difficultyInstructions = `
+NIVEL PEDAGÓGICO: BÁSICO (Taxonomía de Bloom: Recordar y Comprender)
+- Evalúa la identificación de hechos, conceptos clave, vocabulario técnico, fechas representativas o reglas básicas esenciales de la materia.
+- Formula preguntas de reconocimiento directo o de definiciones explícitas, sin requerir razonamientos de múltiples etapas.`
+  } else if (difficulty === 'avanzado') {
+    difficultyInstructions = `
+NIVEL PEDAGÓGICO: AVANZADO (Taxonomía de Bloom: Sintetizar y Evaluar)
+- Fomenta el pensamiento crítico, la argumentación, la resolución de casos de estudio complejos y la deducción lógica profunda.
+- Diseña preguntas que impliquen identificar falacias, evaluar alternativas complejas o interrelacionar múltiples ejes temáticos de la materia.`
+  } else {
+    difficultyInstructions = `
+NIVEL PEDAGÓGICO: INTERMEDIO (Taxonomía de Bloom: Aplicar y Analizar)
+- Evalúa la relación y comparación de conceptos, la resolución de problemas de complejidad media y la interpretación de textos, datos, mapas o fenómenos.
+- Requiere la aplicación práctica de reglas teóricas en contextos o escenarios concretos.`
+  }
+
   const systemPrompt = `${specialistRole}
 Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
+ADAPTA el estilo de las preguntas estrictamente a la materia solicitada (${subject}).
+${difficultyInstructions}
 
 INSTRUCCIONES CRÍTICAS:
 1. Genera EXACTAMENTE ${questionCount} preguntas.
@@ -330,7 +352,7 @@ IMPORTANTE: Responde SOLO JSON válido comenzando con { y terminando con }`
     console.log('[cleanGeminiResponse] Before:', rawText.length, 'After:', text.length)
     console.log('[cleanGeminiResponse] First 300 chars:', text.substring(0, 300))
 
-    const repaired = await repairQuizJson({ text })
+    const repaired = await repairQuizJson({ text, error: undefined as any })
     console.log('[repairQuizJson] Result:', repaired ? `Success (${repaired.length} chars)` : 'Failed')
 
     const jsonCandidate = repaired ?? extractFirstJsonObject(text)
@@ -417,6 +439,7 @@ async function generateQuizBatch({
   previousNote,
   pedagogyNote,
   specialistRole,
+  difficulty,
 }: {
   subject: string
   curriculum: string
@@ -426,6 +449,7 @@ async function generateQuizBatch({
   previousNote: string
   pedagogyNote: string
   specialistRole: string
+  difficulty: string
 }) {
   return generateQuizBatchWithFallback({
     subject,
@@ -436,6 +460,7 @@ async function generateQuizBatch({
     previousNote,
     pedagogyNote,
     specialistRole,
+    difficulty,
   })
 }
 
@@ -614,6 +639,18 @@ export async function POST(req: Request) {
 
   const specialistRole = getSpecialistRole(subject, subjectSource)
 
+  // Try to extract difficulty from pedagogyContext if present
+  let difficulty = 'intermedio'
+  if (typeof pedagogyContext === 'string') {
+    const match = pedagogyContext.match(/Dificultad:\s*([a-zA-Záéíóúñ]+)/i)
+    if (match && match[1]) {
+      const diffVal = match[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      if (['basico', 'intermedio', 'avanzado'].includes(diffVal)) {
+        difficulty = diffVal
+      }
+    }
+  }
+
   const modeDescription = mode === 'teorico'
     ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
     : mode === 'practico'
@@ -650,6 +687,7 @@ export async function POST(req: Request) {
             previousNote,
             pedagogyNote,
             specialistRole,
+            difficulty,
           })
 
           for (const question of teoricoBatch) {
@@ -671,6 +709,7 @@ export async function POST(req: Request) {
             previousNote,
             pedagogyNote,
             specialistRole,
+            difficulty,
           })
 
           for (const question of practicoBatch) {
@@ -692,7 +731,7 @@ export async function POST(req: Request) {
 
       const mixedQuestions = interleaveQuestions(teoricoCollected, practicoCollected, questionCount)
 
-      const shuffledMixedQuestions = mixedQuestions.map((q) => {
+      const shuffledMixedQuestions = mixedQuestions.map((q, idx) => {
         const optionsWithIndex = q.options.map((text: string, index: number) => ({ text, index }))
         shuffleInPlace(optionsWithIndex)
 
@@ -701,6 +740,7 @@ export async function POST(req: Request) {
 
         return {
           ...q,
+          id: `q${idx + 1}`,
           options: newOptions,
           correctAnswer: newCorrectAnswer
         }
@@ -719,6 +759,7 @@ export async function POST(req: Request) {
         previousNote,
         pedagogyNote,
         specialistRole,
+        difficulty,
       })
 
       console.log('[generateObject] Success! Questions:', generatedQuestions.length)
@@ -746,17 +787,18 @@ export async function POST(req: Request) {
       }, { status: 409 })
     }
 
-    const shuffledQuestions = collectedQuestions.map((q) => {
-      const optionsWithIndex = q.options.map((text, index) => ({ text, index }))
+    const shuffledQuestions = collectedQuestions.map((q, idx) => {
+      const optionsWithIndex = q.options.map((text: string, index: number) => ({ text, index }))
       shuffleInPlace(optionsWithIndex)
 
-      const newOptions = optionsWithIndex.map((o) => o.text)
+      const newOptions = optionsWithIndex.map((o: { text: string }) => o.text)
       const newCorrectAnswer = optionsWithIndex.findIndex(
-        (o) => o.index === q.correctAnswer
+        (o: { index: number }) => o.index === q.correctAnswer
       )
 
       return {
         ...q,
+        id: `q${idx + 1}`,
         options: newOptions,
         correctAnswer: newCorrectAnswer
       }

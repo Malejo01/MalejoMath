@@ -1,24 +1,27 @@
 import { sql } from '@/lib/db'
-import { auth } from '@clerk/nextjs/server'
+import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
+import { debugLog } from '@/lib/utils'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
   try {
-    console.log('[v0] History API called')
+    debugLog('[v0] History API called')
     
-    const { userId } = await auth()
-    console.log('[v0] Clerk userId:', userId)
+    const session = await auth()
+    const userId = session?.user?.id ?? null
     
     if (!userId) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
     // Verificar si el usuario existe (user.id = clerk_id)
-    console.log('[v0] Checking if user exists...')
+    debugLog('[v0] Checking if user exists...')
     const user = await sql`
       SELECT id FROM users WHERE id = ${userId}
     `
-    console.log('[v0] User exists:', user.length > 0)
+    debugLog('[v0] User exists:', user.length > 0)
     
     if (user.length === 0) {
       // Usuario no ha completado ningun quiz aun
@@ -31,7 +34,7 @@ export async function GET(req: Request) {
     const createdAfterFilter = searchParams.get('createdAfter')?.trim() || ''
 
     // Obtener intentos de quiz (ultimos 20)
-    console.log('[v0] Fetching quiz attempts...')
+    debugLog('[v0] Fetching quiz attempts...')
     const rawAttempts = await sql`
       SELECT 
         id,
@@ -58,10 +61,10 @@ export async function GET(req: Request) {
 
       return matchesSubject && matchesMode && matchesDate
     })
-    console.log('[v0] Found', attempts.length, 'attempts')
+    debugLog('[v0] Found', attempts.length, 'attempts')
 
     // Obtener dominio de temas
-    console.log('[v0] Fetching topic mastery...')
+    debugLog('[v0] Fetching topic mastery...')
     const mastery = await sql`
       SELECT 
         subject,
@@ -74,7 +77,7 @@ export async function GET(req: Request) {
       WHERE user_id = ${userId}
       ORDER BY subject, topic_name
     `
-    console.log('[v0] Found', mastery.length, 'mastery records')
+    debugLog('[v0] Found', mastery.length, 'mastery records')
 
     return NextResponse.json({ 
       attempts,

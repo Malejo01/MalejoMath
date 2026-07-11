@@ -1,0 +1,680 @@
+'use client'
+
+import { useRef, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import {
+  BookOpen, GraduationCap, University, ChevronRight, Loader2,
+  CheckSquare, Square, Minus, ArrowLeft, Settings2, Upload, FileText,
+} from 'lucide-react'
+import { MathBackground } from '@/components/math-background'
+import { cn } from '@/lib/utils'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Nivel = 'Primario' | 'Secundario' | 'Superior'
+
+type QuizMode = 'teorico' | 'practico' | 'mixto'
+
+interface Eje {
+  eje: string
+  temas: string[]
+}
+
+interface SelectedTopicMap {
+  // key: `${eje}||${tema}` → true
+  [key: string]: boolean
+}
+
+export interface CurriculumSelection {
+  nivel: Nivel
+  grado: string
+  materia: string
+  selectedTopics: { id: string; name: string; eje: string }[]
+  mode: QuizMode
+  questionCount: number
+  difficulty: 'basico' | 'intermedio' | 'avanzado'
+}
+
+interface CurriculumSelectorProps {
+  onStartQuiz: (selection: CurriculumSelection) => void
+  onCancel?: () => void
+}
+
+// ─── Sub-component: Nivel card ────────────────────────────────────────────────
+
+const NIVEL_OPTIONS: { value: Nivel; label: string; sub: string; Icon: React.ElementType; color: string }[] = [
+  {
+    value: 'Primario',
+    label: 'Nivel Primario',
+    sub: '1er a 7mo grado',
+    Icon: BookOpen,
+    color: 'from-sky-500 to-blue-600',
+  },
+  {
+    value: 'Secundario',
+    label: 'Nivel Secundario',
+    sub: '1er a 6to año',
+    Icon: GraduationCap,
+    color: 'from-violet-500 to-purple-600',
+  },
+  {
+    value: 'Superior',
+    label: 'Nivel Superior / Terciario',
+    sub: 'Carrera con programa propio',
+    Icon: University,
+    color: 'from-emerald-500 to-teal-600',
+  },
+]
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelectorProps) {
+  const { data: session } = useSession()
+  const isDocente = session?.user?.role === 'DOCENTE'
+
+  // Step machine: nivel → grado → materia → topics → params
+  // For Superior the step sequence is: nivel → superior-form → topics → params
+  type Step = 'nivel' | 'grado' | 'materia' | 'topics' | 'params' | 'superior-form'
+  const [step, setStep] = useState<Step>('nivel')
+
+  const [nivel, setNivel] = useState<Nivel | null>(null)
+  const [grades, setGrades] = useState<string[]>([])
+  const [grado, setGrado] = useState<string>('')
+  const [subjects, setSubjects] = useState<string[]>([])
+  const [materia, setMateria] = useState<string>('')
+  const [axes, setAxes] = useState<Eje[]>([])
+  const [selected, setSelected] = useState<SelectedTopicMap>({})
+  const [loadingData, setLoadingData] = useState(false)
+
+  // Superior custom flow state
+  const [carrera, setCarrera] = useState('')
+  const [anioCarrera, setAnioCarrera] = useState('')
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [parsedUnits, setParsedUnits] = useState<{ id: string; name: string; topics: { id: string; name: string }[] }[]>([])
+  const [uploadLoading, setUploadLoading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Quiz params
+  const [mode, setMode] = useState<QuizMode>('mixto')
+  const [questionCount, setQuestionCount] = useState(20)
+  const [difficulty, setDifficulty] = useState<'basico' | 'intermedio' | 'avanzado'>('intermedio')
+
+  // ─── Data fetching ──────────────────────────────────────────────────────────
+
+  const fetchGrades = async (n: Nivel) => {
+    setLoadingData(true)
+    try {
+      const res = await fetch(`/api/curriculum/grades?nivel=${encodeURIComponent(n)}`)
+      const data = await res.json()
+      setGrades(data.grades ?? [])
+    } finally {
+      setLoadingData(false)
+    }
+  }
+
+  const fetchSubjects = async (n: Nivel, g: string) => {
+    setLoadingData(true)
+    try {
+      const res = await fetch(`/api/curriculum/subjects?nivel=${encodeURIComponent(n)}&grado=${encodeURIComponent(g)}`)
+      const data = await res.json()
+      setSubjects(data.subjects ?? [])
+    } finally {
+      setLoadingData(false)
+    }
+  }
+
+  const fetchTopics = async (n: Nivel, g: string, m: string) => {
+    setLoadingData(true)
+    try {
+      const res = await fetch(
+        `/api/curriculum/topics?nivel=${encodeURIComponent(n)}&grado=${encodeURIComponent(g)}&materia=${encodeURIComponent(m)}`
+      )
+      const data = await res.json()
+      setAxes(data.axes ?? [])
+      setSelected({})
+    } finally {
+      setLoadingData(false)
+    }
+  }
+
+  // ─── Step handlers ──────────────────────────────────────────────────────────
+
+  const handleNivel = (n: Nivel) => {
+    setNivel(n)
+    setGrado('')
+    setMateria('')
+    setAxes([])
+    setSelected({})
+    if (n === 'Superior') {
+      setStep('superior-form')
+    } else {
+      fetchGrades(n)
+      setStep('grado')
+    }
+  }
+
+  const handleGrado = (g: string) => {
+    setGrado(g)
+    setMateria('')
+    setAxes([])
+    setSelected({})
+    fetchSubjects(nivel!, g)
+    setStep('materia')
+  }
+
+  const handleMateria = (m: string) => {
+    setMateria(m)
+    setAxes([])
+    setSelected({})
+    fetchTopics(nivel!, grado, m)
+    setStep('topics')
+  }
+
+  // ─── Superior custom flow ────────────────────────────────────────────────────
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadedFile(file)
+    setUploadError(null)
+    setParsedUnits([])
+    setUploadLoading(true)
+
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/curriculum/parse-program', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error al procesar el archivo')
+      const units = data.units ?? []
+      setParsedUnits(units)
+      // Seed axes from parsed units so the topics step can show them
+      setAxes(units.map((u: { name: string; topics: { name: string }[] }) => ({
+        eje: u.name,
+        temas: u.topics.map((t: { name: string }) => t.name),
+      })))
+      setSelected({})
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Error al subir el archivo')
+    } finally {
+      setUploadLoading(false)
+    }
+  }
+
+  const handleSuperiorContinue = () => {
+    if (!carrera.trim()) return
+    setMateria(carrera)
+    setGrado(anioCarrera || 'No especificado')
+    setStep('topics')
+  }
+
+  // ─── Checkbox logic ─────────────────────────────────────────────────────────
+
+  const topicKey = (eje: string, tema: string) => `${eje}||${tema}`
+
+  const toggleTema = (eje: string, tema: string) => {
+    const k = topicKey(eje, tema)
+    setSelected((prev) => ({ ...prev, [k]: !prev[k] }))
+  }
+
+  const ejeState = (eje: Eje): 'all' | 'some' | 'none' => {
+    const checked = eje.temas.filter((t) => selected[topicKey(eje.eje, t)])
+    if (checked.length === 0) return 'none'
+    if (checked.length === eje.temas.length) return 'all'
+    return 'some'
+  }
+
+  const toggleEje = (eje: Eje) => {
+    const state = ejeState(eje)
+    const next = state === 'all' ? false : true
+    setSelected((prev) => {
+      const updated = { ...prev }
+      for (const t of eje.temas) {
+        updated[topicKey(eje.eje, t)] = next
+      }
+      return updated
+    })
+  }
+
+  const selectedCount = Object.values(selected).filter(Boolean).length
+
+  const buildTopicList = () => {
+    const list: CurriculumSelection['selectedTopics'] = []
+    for (const ax of axes) {
+      for (const t of ax.temas) {
+        if (selected[topicKey(ax.eje, t)]) {
+          list.push({ id: `${ax.eje}-${t}`.toLowerCase().replace(/\s+/g, '-'), name: t, eje: ax.eje })
+        }
+      }
+    }
+    return list
+  }
+
+  const handleConfirmTopics = () => {
+    if (selectedCount === 0) return
+    setStep('params')
+  }
+
+  const handleStart = () => {
+    onStartQuiz({
+      nivel: nivel!,
+      grado,
+      materia,
+      selectedTopics: buildTopicList(),
+      mode,
+      questionCount,
+      difficulty,
+    })
+  }
+
+  // ─── Back navigation ─────────────────────────────────────────────────────────
+
+  const goBack = () => {
+    if (step === 'grado') { setStep('nivel'); setGrades([]) }
+    else if (step === 'materia') { setStep('grado'); setSubjects([]) }
+    else if (step === 'superior-form') { setStep('nivel') }
+    else if (step === 'topics' && nivel !== 'Superior') { setStep('materia'); setAxes([]); setSelected({}) }
+    else if (step === 'topics' && nivel === 'Superior') { setStep('superior-form'); setAxes([]); setSelected({}) }
+    else if (step === 'params' && nivel !== 'Superior') { setStep('topics') }
+    else if (step === 'params' && nivel === 'Superior') { setStep('topics') }
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="relative min-h-screen bg-background overflow-hidden">
+      <MathBackground />
+
+      <div className="relative z-10 max-w-2xl mx-auto px-4 py-8">
+
+        {/* Back button */}
+        {step !== 'nivel' ? (
+          <button
+            onClick={goBack}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver
+          </button>
+        ) : (
+          onCancel && (
+            <button
+              onClick={onCancel}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver al Dashboard
+            </button>
+          )
+        )}
+
+        {/* ── STEP: Nivel ─────────────────────────────────────────────────── */}
+        {step === 'nivel' && (
+          <div>
+            <h1 className="text-2xl font-bold text-foreground mb-1">¿Qué nivel querés trabajar?</h1>
+            <p className="text-muted-foreground text-sm mb-8">Seleccioná el nivel educativo para comenzar.</p>
+
+            <div className="grid gap-4">
+              {NIVEL_OPTIONS.map(({ value, label, sub, Icon, color }) => (
+                <button
+                  key={value}
+                  onClick={() => handleNivel(value)}
+                  className="flex items-center gap-5 p-5 rounded-2xl border border-border bg-card hover:border-primary hover:shadow-md transition-all duration-200 active:scale-95 text-left"
+                >
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center flex-shrink-0`}>
+                    <Icon className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-foreground">{label}</p>
+                    <p className="text-xs text-muted-foreground">{sub}</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: Grado ─────────────────────────────────────────────────── */}
+        {step === 'grado' && (
+          <div>
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">{nivel}</p>
+            <h1 className="text-2xl font-bold text-foreground mb-1">¿Qué año / grado?</h1>
+            <p className="text-muted-foreground text-sm mb-8">Elegí el año para ver las materias disponibles.</p>
+
+            {loadingData ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : grades.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-12">No hay grados cargados para este nivel todavía.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {grades.map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => handleGrado(g)}
+                    className="p-4 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 font-semibold text-sm text-foreground transition-all active:scale-95"
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP: Materia ────────────────────────────────────────────────── */}
+        {step === 'materia' && (
+          <div>
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">{nivel} · {grado}</p>
+            <h1 className="text-2xl font-bold text-foreground mb-1">¿Qué materia?</h1>
+            <p className="text-muted-foreground text-sm mb-8">Seleccioná la materia para ver los ejes y temas.</p>
+
+            {loadingData ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : subjects.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-12">No hay materias cargadas para este grado todavía.</p>
+            ) : (
+              <div className="grid gap-3">
+                {subjects.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleMateria(s)}
+                    className="flex items-center justify-between p-4 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 font-semibold text-sm text-foreground transition-all active:scale-95"
+                  >
+                    {s}
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP: Topics (Ejes + Temas checkboxes) ───────────────────────── */}
+        {step === 'topics' && (
+          <div>
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">{nivel} · {grado} · {materia}</p>
+            <h1 className="text-2xl font-bold text-foreground mb-1">Seleccioná los temas</h1>
+            <p className="text-muted-foreground text-sm mb-6">Elegí uno o más temas. Podés seleccionar ejes completos.</p>
+
+            {loadingData ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : axes.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-12">No hay temas cargados para esta materia todavía.</p>
+            ) : (
+              <>
+                <div className="space-y-4 mb-6">
+                  {axes.map((ax) => {
+                    const state = ejeState(ax)
+                    return (
+                      <div key={ax.eje} className="border border-border rounded-xl overflow-hidden">
+                        {/* Eje header */}
+                        <button
+                          onClick={() => toggleEje(ax)}
+                          className="flex items-center gap-3 w-full px-4 py-3 bg-secondary/50 hover:bg-secondary transition-colors text-left"
+                        >
+                          <span className="flex-shrink-0 text-primary">
+                            {state === 'all' ? (
+                              <CheckSquare className="w-5 h-5" />
+                            ) : state === 'some' ? (
+                              <Minus className="w-5 h-5" />
+                            ) : (
+                              <Square className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </span>
+                          <span className="font-semibold text-sm text-foreground flex-1">{ax.eje}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {ax.temas.filter((t) => selected[topicKey(ax.eje, t)]).length}/{ax.temas.length}
+                          </span>
+                        </button>
+
+                        {/* Temas */}
+                        <div className="divide-y divide-border/50">
+                          {ax.temas.map((tema) => {
+                            const k = topicKey(ax.eje, tema)
+                            const checked = !!selected[k]
+                            return (
+                              <button
+                                key={k}
+                                onClick={() => toggleTema(ax.eje, tema)}
+                                className={cn(
+                                  'flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors',
+                                  checked ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-secondary/40'
+                                )}
+                              >
+                                <span className="flex-shrink-0">
+                                  {checked ? (
+                                    <CheckSquare className="w-4 h-4 text-primary" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                </span>
+                                <span className={cn('text-sm', checked ? 'text-foreground font-medium' : 'text-muted-foreground')}>
+                                  {tema}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Sticky confirm bar */}
+                <div className="sticky bottom-4 flex items-center justify-between gap-4 p-4 bg-card/90 backdrop-blur-md border border-border rounded-2xl shadow-lg">
+                  <span className="text-sm text-muted-foreground">
+                    {selectedCount === 0 ? 'Ningún tema seleccionado' : `${selectedCount} tema${selectedCount > 1 ? 's' : ''} seleccionado${selectedCount > 1 ? 's' : ''}`}
+                  </span>
+                  <button
+                    onClick={handleConfirmTopics}
+                    disabled={selectedCount === 0}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                  >
+                    Configurar cuestionario
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP: Superior custom form ────────────────────────────── */}
+        {step === 'superior-form' && (
+          <div>
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">Nivel Superior / Terciario</p>
+            <h1 className="text-2xl font-bold text-foreground mb-1">Datos de la carrera</h1>
+            <p className="text-muted-foreground text-sm mb-8">
+              Ingresá la carrera y subí el programa de la materia en PDF o Word.
+            </p>
+
+            <div className="space-y-5 mb-6">
+              {/* Carrera */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1.5">
+                  Nombre de la carrera <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={carrera}
+                  onChange={(e) => setCarrera(e.target.value)}
+                  placeholder="Ej: Ingeniería en Sistemas, Licenciatura en Enfermería..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                />
+              </div>
+
+              {/* Año */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1.5">
+                  Año de la carrera
+                </label>
+                <input
+                  type="text"
+                  value={anioCarrera}
+                  onChange={(e) => setAnioCarrera(e.target.value)}
+                  placeholder="Ej: 1er año, 3er año..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                />
+              </div>
+
+              {/* Programa (PDF/DOCX) */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-1.5">
+                  Programa de la materia (PDF o Word)
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadLoading}
+                  className={cn(
+                    'w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed transition-all',
+                    uploadedFile && !uploadError
+                      ? 'border-primary bg-primary/5 text-primary'
+                      : 'border-border hover:border-primary/50 text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {uploadLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /><span className="text-sm">Procesando con IA...</span></>
+                  ) : uploadedFile && !uploadError ? (
+                    <><FileText className="w-4 h-4" /><span className="text-sm font-medium">{uploadedFile.name}</span></>
+                  ) : (
+                    <><Upload className="w-4 h-4" /><span className="text-sm">Subir programa (PDF, DOCX, DOC)</span></>
+                  )}
+                </button>
+
+                {uploadError && (
+                  <p className="mt-2 text-xs text-destructive">{uploadError}</p>
+                )}
+                {parsedUnits.length > 0 && (
+                  <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                    ✓ {parsedUnits.length} unidades · {parsedUnits.reduce((s, u) => s + u.topics.length, 0)} temas detectados
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={handleSuperiorContinue}
+              disabled={!carrera.trim() || (!!uploadedFile && uploadLoading)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+            >
+              {parsedUnits.length > 0 ? 'Seleccionar temas' : 'Continuar sin programa'}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP: Params ─────────────────────────────────────────────────── */}
+        {step === 'params' && (
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <Settings2 className="w-5 h-5 text-primary" />
+              <p className="text-xs font-semibold text-primary uppercase tracking-widest">Configuración</p>
+            </div>
+            <h1 className="text-2xl font-bold text-foreground mb-1">Parámetros del cuestionario</h1>
+            {nivel !== 'Superior' && (
+              <p className="text-muted-foreground text-sm mb-8">
+                {selectedCount} tema{selectedCount !== 1 ? 's' : ''} de <strong>{materia}</strong> · {grado} · {nivel}
+              </p>
+            )}
+
+            <div className="space-y-6 mb-8">
+              {/* Tipo */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-3">Tipo de cuestionario</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['teorico', 'practico', 'mixto'] as QuizMode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={cn(
+                        'p-3 rounded-xl border text-sm font-semibold capitalize transition-all',
+                        mode === m
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                      )}
+                    >
+                      {m.charAt(0).toUpperCase() + m.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cantidad */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-3">
+                  Cantidad de preguntas: <span className="text-primary">{questionCount}</span>
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {[5, 10, 15, 20, 30, 40].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setQuestionCount(n)}
+                      className={cn(
+                        'w-12 h-10 rounded-xl border text-sm font-bold transition-all',
+                        questionCount === n
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dificultad */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-3">Dificultad</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['basico', 'intermedio', 'avanzado'] as const).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setDifficulty(d)}
+                      className={cn(
+                        'p-3 rounded-xl border text-sm font-semibold capitalize transition-all',
+                        difficulty === d
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                      )}
+                    >
+                      {d.charAt(0).toUpperCase() + d.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* CTA diferenciado por rol */}
+            <div className="space-y-3">
+              {isDocente ? (
+                <button
+                  onClick={handleStart}
+                  className="w-full py-3.5 rounded-2xl bg-primary text-primary-foreground font-bold text-base shadow-lg hover:bg-primary/90 transition-all active:scale-95"
+                >
+                  Generar Cuestionario
+                </button>
+              ) : (
+                <button
+                  onClick={handleStart}
+                  className="w-full py-3.5 rounded-2xl bg-primary text-primary-foreground font-bold text-base shadow-lg hover:bg-primary/90 transition-all active:scale-95"
+                >
+                  Realizar Cuestionario
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
