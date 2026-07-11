@@ -1,6 +1,18 @@
 import { neon } from '@neondatabase/serverless'
 
-export const sql = neon(process.env.DATABASE_URL!)
+let lazySql: any = null
+
+export const sql = (...args: any[]) => {
+  if (!lazySql) {
+    const url = process.env.DATABASE_URL
+    if (!url) {
+      console.warn("WARNING: DATABASE_URL is not set. Database queries will fail.")
+      throw new Error("No database connection string was provided to `neon()`. Perhaps an environment variable has not been set?")
+    }
+    lazySql = neon(url)
+  }
+  return lazySql(...args)
+}
 
 // Types for database operations
 export interface DbUser {
