@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -61,7 +61,7 @@ const colorConfig = {
 }
 
 export function SubjectContent({ subject }: SubjectContentProps) {
-  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds, addTeacherQuiz, setTeacherSection, userProfile } = useAppStore()
+  const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds, addTeacherQuiz, setTeacherSection, userProfile, currentQuiz } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
   const [showModeDialog, setShowModeDialog] = useState(false)
   const [showActionDialog, setShowActionDialog] = useState(false)
@@ -166,6 +166,10 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   const generateQuestionsByMode = async (mode: 'teorico' | 'practico' | 'mixto', questionCount: number): Promise<Question[] | null> => {
     if (selectedTopics.length === 0) return null
 
+    const targetNivel = currentQuiz?.config?.nivel || userProfile?.nivel
+    const targetGrado = currentQuiz?.config?.grado || userProfile?.grado
+    const targetDifficulty = currentQuiz?.config?.difficulty || 'intermedio'
+
     try {
       const response = await fetch('/api/generate-quiz', {
         method: 'POST',
@@ -174,6 +178,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
           subject: subject.name,
           subjectSource: subject.source || 'core',
           subjectUnits: subject.units || [],
+          nivel: targetNivel,
+          grado: targetGrado,
+          difficulty: targetDifficulty,
           topics: selectedTopics,
           mode,
           questionCount,
@@ -428,7 +435,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   }
 
   return (
-    <div className="space-y-5 animate-in fade-in-50 slide-in-from-bottom-4 duration-300">
+    <div className="space-y-5 pb-28 animate-in fade-in-50 slide-in-from-bottom-4 duration-300">
       {/* Subject Header Card */}
       <Card className={cn('overflow-hidden border-2', colors.borderLight)}>
         <div className={cn('bg-gradient-to-r p-4 text-white', colors.gradient)}>
@@ -631,28 +638,32 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         })}
       </div>
 
-      {/* Start Quiz Button - Fixed at bottom when topics selected */}
-      {selectedTopics.length > 0 && (
-        <div className="sticky bottom-4 pt-4">
+      {/* Floating Sticky Generar Cuestionario Bar */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t-2 border-border/80 z-30 shadow-2xl transition-all">
+        <div className="max-w-4xl mx-auto">
           <Button
             onClick={() => setShowModeDialog(true)}
-            disabled={isLoading}
+            disabled={isLoading || selectedTopics.length === 0}
             className={cn(
-              'w-full h-16 text-lg font-bold gap-3 rounded-2xl shadow-xl transition-all',
-              'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)] text-white border-0',
-              'disabled:opacity-50',
-              'hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]'
+              'w-full h-16 text-lg font-bold gap-3 rounded-2xl transition-all duration-300',
+              selectedTopics.length > 0
+                ? 'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)] text-white shadow-xl hover:shadow-2xl hover:scale-[1.01] active:scale-[0.99] border-0'
+                : 'opacity-45 pointer-events-none bg-muted text-muted-foreground border-2 border-border'
             )}
             size="lg"
           >
-            <Play className="w-5 h-5" />
+            <Play className="w-5 h-5 fill-current" />
             <span className="flex flex-col items-start leading-tight">
-              <span>Empezar Cuestionario</span>
-              <span className="text-xs font-semibold text-white/85">Generar {previewQuestionCount} preguntas</span>
+              <span>Generar cuestionario</span>
+              <span className="text-xs font-medium opacity-90">
+                {selectedTopics.length === 0
+                  ? 'Selecciona al menos 1 tema arriba para continuar'
+                  : `${selectedTopics.length} tema${selectedTopics.length > 1 ? 's' : ''} seleccionado${selectedTopics.length > 1 ? 's' : ''}`}
+              </span>
             </span>
           </Button>
         </div>
-      )}
+      </div>
 
       <QuizModeDialog
         open={showModeDialog}

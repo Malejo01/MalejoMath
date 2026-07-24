@@ -1,6 +1,7 @@
 import { generateObject, generateText, type RepairTextFunction } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
+import { buildEducationSystemPrompt } from '@/lib/education-context'
 
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -243,6 +244,8 @@ async function generateQuizBatchWithFallback({
   pedagogyNote,
   specialistRole,
   difficulty,
+  nivel,
+  grado,
 }: {
   subject: string
   curriculum: string
@@ -253,33 +256,25 @@ async function generateQuizBatchWithFallback({
   pedagogyNote: string
   specialistRole: string
   difficulty: string
+  nivel?: string
+  grado?: string
 }) {
-  let difficultyInstructions = ''
-  if (difficulty === 'basico') {
-    difficultyInstructions = `
-NIVEL PEDAGÓGICO: BÁSICO (Taxonomía de Bloom: Recordar y Comprender)
-- Evalúa la identificación de hechos, conceptos clave, vocabulario técnico, fechas representativas o reglas básicas esenciales de la materia.
-- Formula preguntas de reconocimiento directo o de definiciones explícitas, sin requerir razonamientos de múltiples etapas.`
-  } else if (difficulty === 'avanzado') {
-    difficultyInstructions = `
-NIVEL PEDAGÓGICO: AVANZADO (Taxonomía de Bloom: Sintetizar y Evaluar)
-- Fomenta el pensamiento crítico, la argumentación, la resolución de casos de estudio complejos y la deducción lógica profunda.
-- Diseña preguntas que impliquen identificar falacias, evaluar alternativas complejas o interrelacionar múltiples ejes temáticos de la materia.`
-  } else {
-    difficultyInstructions = `
-NIVEL PEDAGÓGICO: INTERMEDIO (Taxonomía de Bloom: Aplicar y Analizar)
-- Evalúa la relación y comparación de conceptos, la resolución de problemas de complejidad media y la interpretación de textos, datos, mapas o fenómenos.
-- Requiere la aplicación práctica de reglas teóricas en contextos o escenarios concretos.`
-  }
+  const educationPrompt = buildEducationSystemPrompt({
+    nivel,
+    grado,
+    materia: subject,
+    difficulty,
+  })
 
-  const systemPrompt = `${specialistRole}
+  const systemPrompt = `${educationPrompt}
+${specialistRole ? `\nASPECTO ADICIONAL DE MATERIA: ${specialistRole}` : ''}
+
 Tu única tarea es generar un objeto JSON que contenga un array de preguntas.
-ADAPTA el estilo de las preguntas estrictamente a la materia solicitada (${subject}).
-${difficultyInstructions}
+ADAPTA el estilo de las preguntas estrictamente a la materia solicitada (${subject}) y al nivel/grado del estudiante.
 
 INSTRUCCIONES CRÍTICAS:
 1. Genera EXACTAMENTE ${questionCount} preguntas.
-2. Responde SOLO con JSON válido. Sin markdown, sin explicaciones, sin comentarios.
+2. Responde SOLO con JSON válido. Sin markdown, sin explicaciones fuera del JSON, sin comentarios.
 3. Estructura: { "questions": [ { id, topic, topicName, question, options, correctAnswer, explanation }, ... ] }
 
 FORMATO ESTRICTO PARA CONTENIDO MATEMÁTICO (si aplica):
@@ -292,10 +287,10 @@ CAMPOS OBLIGATORIOS POR PREGUNTA:
 - id: string (ej: "q1", "q2")
 - topic: string (ID del tema)
 - topicName: string (nombre del tema)
-- question: string (enunciado con LaTeX entre $)
-- options: array de strings (4-6 opciones)
+- question: string (enunciado adaptado a la edad, con LaTeX entre $ si aplica)
+- options: array de strings (4 opciones acordes a la edad)
 - correctAnswer: number (0-based index)
-- explanation: string (2-4 frases, con LaTeX entre $)`
+- explanation: string (2-4 frases con tono empático y lenguaje acorde a la edad del estudiante)`
 
   const userPrompt = `Genera ${questionCount} preguntas para: ${subject}
 
@@ -440,6 +435,8 @@ async function generateQuizBatch({
   pedagogyNote,
   specialistRole,
   difficulty,
+  nivel,
+  grado,
 }: {
   subject: string
   curriculum: string
@@ -450,6 +447,8 @@ async function generateQuizBatch({
   pedagogyNote: string
   specialistRole: string
   difficulty: string
+  nivel?: string
+  grado?: string
 }) {
   return generateQuizBatchWithFallback({
     subject,
@@ -461,6 +460,8 @@ async function generateQuizBatch({
     pedagogyNote,
     specialistRole,
     difficulty,
+    nivel,
+    grado,
   })
 }
 
@@ -604,15 +605,53 @@ function buildLocalFallbackQuestions({
 }
 
 export async function POST(req: Request) {
-  const { subject, subjectSource = 'core', subjectUnits = [], topics, mode, previousQuestionIds, previousQuestions, pedagogyContext, questionCount: rawQuestionCount } = await req.json()
-  const parsedQuestionCount = Number(rawQuestionCount)
-  const questionCount = Number.isInteger(parsedQuestionCount) ? parsedQuestionCount : 10
+  const {
+    subject,
+    subjectSource = 'core',
+    subjectUnits = [],
+    topics,
+    mode,
+    previousQuestionIds,
+    previousQuestions,
+    pedagogyContext,
+    questionCount: rawQuestionCount,
+    nivel: rawNivel,
+    grado: rawGrado,
+    difficulty: rawDifficulty,
+  } = await req.json()
 
-  if (questionCount < 5 || questionCount > 50) {
+  const parsedQuestionCount = Number(rawQuestionCount)
+  const questionCount = Number.isInteger(parsedQuestionCount) && parsedQuestionCount >= 1 ? parsedQuestionCount : 10
+
+  if (questionCount < 1 || questionCount > 50) {
     return Response.json({
       questions: [],
-      error: 'La cantidad de preguntas debe estar entre 5 y 50.'
+      error: 'La cantidad de preguntas debe estar entre 1 y 50.'
     }, { status: 400 })
+  }
+
+  let nivel = rawNivel
+  let grado = rawGrado
+  let difficulty = rawDifficulty || 'intermedio'
+
+  if (typeof pedagogyContext === 'string') {
+    if (!nivel) {
+      const matchNivel = pedagogyContext.match(/Nivel:\s*([a-zA-Záéíóúñ]+)/i)
+      if (matchNivel && matchNivel[1]) nivel = matchNivel[1]
+    }
+    if (!grado) {
+      const matchGrado = pedagogyContext.match(/Grado(?:\/Año)?:\s*([^\s|]+(?:\s+[^\s|]+)*)/i)
+      if (matchGrado && matchGrado[1]) grado = matchGrado[1]
+    }
+    if (!rawDifficulty) {
+      const matchDiff = pedagogyContext.match(/Dificultad:\s*([a-zA-Záéíóúñ]+)/i)
+      if (matchDiff && matchDiff[1]) {
+        const diffVal = matchDiff[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        if (['basico', 'intermedio', 'avanzado'].includes(diffVal)) {
+          difficulty = diffVal
+        }
+      }
+    }
   }
 
   const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
@@ -638,18 +677,6 @@ export async function POST(req: Request) {
   }
 
   const specialistRole = getSpecialistRole(subject, subjectSource)
-
-  // Try to extract difficulty from pedagogyContext if present
-  let difficulty = 'intermedio'
-  if (typeof pedagogyContext === 'string') {
-    const match = pedagogyContext.match(/Dificultad:\s*([a-zA-Záéíóúñ]+)/i)
-    if (match && match[1]) {
-      const diffVal = match[1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      if (['basico', 'intermedio', 'avanzado'].includes(diffVal)) {
-        difficulty = diffVal
-      }
-    }
-  }
 
   const modeDescription = mode === 'teorico'
     ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
@@ -688,6 +715,8 @@ export async function POST(req: Request) {
             pedagogyNote,
             specialistRole,
             difficulty,
+            nivel,
+            grado,
           })
 
           for (const question of teoricoBatch) {
@@ -710,6 +739,8 @@ export async function POST(req: Request) {
             pedagogyNote,
             specialistRole,
             difficulty,
+            nivel,
+            grado,
           })
 
           for (const question of practicoBatch) {
@@ -760,6 +791,8 @@ export async function POST(req: Request) {
         pedagogyNote,
         specialistRole,
         difficulty,
+        nivel,
+        grado,
       })
 
       console.log('[generateObject] Success! Questions:', generatedQuestions.length)

@@ -15,6 +15,7 @@ interface QuizModeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelectMode: (mode: 'teorico' | 'practico' | 'mixto') => void
+  onBack?: () => void
   isLoading?: boolean
   title?: string
   description?: string
@@ -62,6 +63,7 @@ export function QuizModeDialog({
   open,
   onOpenChange,
   onSelectMode,
+  onBack,
   isLoading = false,
   title = 'Elegir tipo de cuestionario',
   description = 'Selecciona si quieres practicar con un examen teorico o practico.',
@@ -77,7 +79,19 @@ export function QuizModeDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md rounded-3xl border-2 p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-2 text-left">
+        <DialogHeader className="px-6 pt-6 pb-2 text-left space-y-2">
+          {onBack && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="h-8 px-2 text-xs font-bold text-muted-foreground hover:text-foreground gap-1 -ml-2 self-start"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Volver atrás</span>
+            </Button>
+          )}
           <DialogTitle className="text-xl font-black text-foreground">{title}</DialogTitle>
           <DialogDescription className="text-sm leading-relaxed">
             {description}

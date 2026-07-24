@@ -38,11 +38,15 @@ export interface Question {
 export interface QuizConfig {
   subject: string
   subjectName: string
+  nivel?: string
+  grado?: string
+  difficulty?: 'basico' | 'intermedio' | 'avanzado'
   topics: { id: string; name: string }[]
   mode: 'teorico' | 'practico' | 'mixto'
   questionCount: number
   pedagogyContext?: string
   previewOnly?: boolean
+  misconceptionContext?: string
 }
 
 export interface Answer {
@@ -67,6 +71,18 @@ export interface QuizResult {
   incorrectAnswers: Answer[]
 }
 
+export interface StudentTip {
+  id?: number
+  userId?: string
+  subject: string
+  topicId: string
+  topicName: string
+  misconceptionType: string
+  tip: string
+  resolved?: boolean
+  createdAt?: string
+}
+
 export interface UserProgress {
   streak: number
   lastAttemptDate: string | null
@@ -75,6 +91,7 @@ export interface UserProgress {
   subjectAverages: Record<string, number>
   subjectAttemptCounts: Record<string, number>
   usedQuestionIds: string[]
+  tips?: StudentTip[]
 }
 
 export interface WeakPoint {
@@ -82,6 +99,10 @@ export interface WeakPoint {
   topicName: string
   subject: string
   count: number
+  misconceptionType?: string
+  lastTip?: string
+  nivel?: string
+  grado?: string
 }
 
 export interface QuizAttempt {
@@ -207,4 +228,6 @@ export interface UserProfile {
   email: string
   displayName: string
   role: UserRole
+  nivel?: string
+  grado?: string
 }

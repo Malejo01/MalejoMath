@@ -4,10 +4,11 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { X, ChevronRight, ChevronLeft, Check, AlertCircle, Lightbulb, Loader2 } from 'lucide-react'
+import { X, ChevronRight, ChevronLeft, Check, AlertCircle, Lightbulb, Loader2, Sparkles, Eye, Zap } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { LaTeXRenderer } from './latex-renderer'
 import { MathBackground } from './math-background'
+import { ExplanationModal } from './explanation-modal'
 import { cn } from '@/lib/utils'
 import {
   AlertDialog,
@@ -34,6 +35,7 @@ export function QuizEngine() {
     isCorrect: null
   })
   const [detailedExplanation, setDetailedExplanation] = useState<string | null>(null)
+  const [showExplanationModal, setShowExplanationModal] = useState(false)
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false)
   const [isEditingQuestion, setIsEditingQuestion] = useState(false)
   const [questionDraft, setQuestionDraft] = useState('')
@@ -50,52 +52,26 @@ export function QuizEngine() {
   const isLastQuestion = currentIndex === questions.length - 1
   const isFirstQuestion = currentIndex === 0
 
-  const hasUnsavedPreviewChanges =
-    isPreviewMode &&
-    isEditingQuestion &&
-    currentQuestion &&
-    (questionDraft !== currentQuestion.question ||
-      optionsDraft.length !== currentQuestion.options.length ||
-      optionsDraft.some((option, index) => option !== currentQuestion.options[index]))
-
-  const requestOrRunAction = useCallback((action: 'exit' | 'next' | 'prev' | 'cancel-edit', run: () => void) => {
-    if (hasUnsavedPreviewChanges) {
+  const requestOrRunAction = useCallback((
+    action: 'exit' | 'next' | 'prev' | 'cancel-edit',
+    runAction: () => void
+  ) => {
+    if (isEditingQuestion) {
       setPendingAction(action)
       setShowUnsavedDialog(true)
       return
     }
-
-    run()
-  }, [hasUnsavedPreviewChanges])
+    runAction()
+  }, [isEditingQuestion])
 
   const applyPendingAction = useCallback((action: 'exit' | 'next' | 'prev' | 'cancel-edit' | null) => {
-    if (!action) return
-
+    setIsEditingQuestion(false)
     if (action === 'exit') {
-      setIsEditingQuestion(false)
       setActiveView('dashboard')
-      return
-    }
-
-    if (action === 'next') {
-      setIsEditingQuestion(false)
-      if (!isLastQuestion) {
-        nextQuestion()
-      }
-      return
-    }
-
-    if (action === 'prev') {
-      setIsEditingQuestion(false)
-      if (!isFirstQuestion) {
-        previousQuestion()
-      }
-      return
-    }
-
-    if (action === 'cancel-edit') {
-      setIsEditingQuestion(false)
-      return
+    } else if (action === 'next' && !isLastQuestion) {
+      nextQuestion()
+    } else if (action === 'prev' && !isFirstQuestion) {
+      previousQuestion()
     }
   }, [isFirstQuestion, isLastQuestion, nextQuestion, previousQuestion, setActiveView])
 
@@ -161,6 +137,7 @@ export function QuizEngine() {
     }
 
     setDetailedExplanation(null)
+    setShowExplanationModal(false)
     
     if (isLastQuestion) {
       finishQuiz()
@@ -179,9 +156,17 @@ export function QuizEngine() {
     })
   }, [isPreviewMode, isFirstQuestion, previousQuestion, requestOrRunAction])
 
+  const [modalInitialMode, setModalInitialMode] = useState<'explain' | 'revancha'>('explain')
+
   const handleExplainError = useCallback(async () => {
     if (!currentQuestion || answerState.selected === null) return
+    setModalInitialMode('explain')
     
+    if (detailedExplanation) {
+      setShowExplanationModal(true)
+      return
+    }
+
     setIsLoadingExplanation(true)
     
     try {
@@ -196,17 +181,36 @@ export function QuizEngine() {
           topic: currentQuestion.topicName,
           subject: config?.subjectName,
           pedagogyContext: config?.pedagogyContext,
+          nivel: config?.nivel,
+          grado: config?.grado,
         })
       })
       
       const data = await response.json()
       setDetailedExplanation(data.explanation)
+      setShowExplanationModal(true)
+
+      // Auto-save tip to student's tips chest / misconceptions
+      if (data.tipText && config?.subjectName && currentQuestion.topicName) {
+        fetch('/api/user/tips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: config.subjectName,
+            topicId: currentQuestion.topic,
+            topicName: currentQuestion.topicName,
+            misconceptionType: data.misconceptionType || 'Confusión conceptual',
+            tip: data.tipText,
+          }),
+        }).catch((err) => console.warn('Could not auto-save tip:', err))
+      }
     } catch {
-      setDetailedExplanation('No se pudo cargar la explicacion. Intenta de nuevo.')
+      setDetailedExplanation('No se pudo cargar la explicación. Por favor intenta de nuevo.')
+      setShowExplanationModal(true)
     } finally {
       setIsLoadingExplanation(false)
     }
-  }, [currentQuestion, answerState.selected])
+  }, [currentQuestion, answerState.selected, config, detailedExplanation])
 
   const handleExit = useCallback(() => {
     if (isPreviewMode) {
@@ -229,7 +233,25 @@ export function QuizEngine() {
   return (
     <div className="min-h-screen relative flex flex-col">
       <MathBackground />
-      
+
+      {/* Teacher Preview Banner */}
+      {isPreviewMode && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 text-amber-900 dark:text-amber-200 px-4 py-2.5 flex items-center justify-between gap-3 text-xs sm:text-sm font-semibold z-30 shadow-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <Eye className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="truncate">Modo Vista Previa (Docente) — Estás simulando la experiencia del alumno.</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExit}
+            className="h-8 px-3 rounded-lg border-amber-500/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 text-xs font-bold shrink-0"
+          >
+            Volver al Editor
+          </Button>
+        </div>
+      )}
+
       {/* Header with Progress */}
       <header className="sticky top-0 z-20 bg-card/95 backdrop-blur-xl border-b-2 border-border shadow-sm">
         <div className="px-4 py-3 flex items-center gap-4">
@@ -335,7 +357,7 @@ export function QuizEngine() {
                         String.fromCharCode(65 + index)
                       )}
                     </div>
-                    <span className="flex-1 pt-2.5 font-semibold text-base">
+                    <span className="flex-1 min-w-0 pt-2.5 font-semibold text-base break-words overflow-x-auto max-w-full">
                       {!isPreviewMode || !isEditingQuestion ? (
                         <LaTeXRenderer content={previewOptionValue} className="text-foreground" />
                       ) : (
@@ -377,33 +399,66 @@ export function QuizEngine() {
 
           {/* Feedback after answer - incorrect */}
           {!isPreviewMode && answerState.submitted && !answerState.isCorrect && (
-            <Card className="p-5 border-2 border-destructive bg-destructive/5 animate-in fade-in-50 slide-in-from-bottom-4">
-              <div className="flex items-start gap-3">
+            <Card className="p-4 sm:p-5 border-2 border-destructive/30 bg-destructive/5 animate-in fade-in-50 slide-in-from-bottom-4 space-y-4 max-w-full overflow-hidden min-w-0">
+              <div className="flex items-start gap-3 min-w-0 max-w-full overflow-hidden">
                 <div className="w-10 h-10 rounded-xl bg-destructive flex items-center justify-center shrink-0">
                   <X className="w-5 h-5 text-white" strokeWidth={3} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-destructive mb-1">Incorrecto</h3>
-                  <p className="text-sm text-foreground/80 leading-relaxed">
-                    La respuesta correcta era <strong>{String.fromCharCode(65 + currentQuestion.correctAnswer)}</strong>.{' '}
-                    <LaTeXRenderer content={currentQuestion.explanation} />
-                  </p>
-                </div>
-              </div>
-            </Card>
-          )}
+                <div className="flex-1 min-w-0 space-y-3 max-w-full overflow-hidden">
+                  <h3 className="font-bold text-destructive text-lg">Respuesta Incorrecta</h3>
 
-          {/* Detailed Explanation Modal */}
-          {!isPreviewMode && detailedExplanation && (
-            <Card className="p-5 border-2 border-[var(--algebra)]/30 bg-[var(--algebra-light)] animate-in fade-in-50 slide-in-from-bottom-4">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--algebra)] flex items-center justify-center shrink-0">
-                  <Lightbulb className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-foreground mb-2">Explicacion Detallada</h3>
-                  <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                    <LaTeXRenderer content={detailedExplanation} />
+                  {/* Tu respuesta vs Respuesta correcta */}
+                  <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 w-full min-w-0 max-w-full">
+                    <div className="p-3.5 rounded-2xl bg-destructive/10 border border-destructive/25 space-y-1 min-w-0 max-w-full overflow-hidden break-words">
+                      <span className="text-xs font-bold text-destructive uppercase tracking-wider block">
+                        🔴 Tu respuesta
+                      </span>
+                      <div className="text-sm font-medium text-foreground break-words min-w-0 overflow-hidden">
+                        <LaTeXRenderer
+                          content={`${String.fromCharCode(65 + (answerState.selected ?? 0))}) ${currentQuestion.options[answerState.selected ?? 0]}`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 space-y-1 min-w-0 max-w-full overflow-hidden break-words">
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
+                        🟢 Respuesta correcta
+                      </span>
+                      <div className="text-sm font-medium text-foreground break-words min-w-0 overflow-hidden">
+                        <LaTeXRenderer
+                          content={`${String.fromCharCode(65 + currentQuestion.correctAnswer)}) ${currentQuestion.options[currentQuestion.correctAnswer]}`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-foreground/80 leading-relaxed pt-1 break-words min-w-0 max-w-full overflow-hidden">
+                    <LaTeXRenderer content={currentQuestion.explanation} />
+                  </div>
+
+                  {/* Acciones directas post-error */}
+                  <div className="pt-2 flex flex-col sm:flex-row gap-2.5 w-full min-w-0 max-w-full">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setModalInitialMode('revancha')
+                        setShowExplanationModal(true)
+                      }}
+                      className="w-full sm:flex-1 h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs gap-1.5 shadow-md hover:from-amber-600 hover:to-orange-600 active:scale-95 whitespace-normal leading-tight px-3"
+                    >
+                      <Zap className="w-4 h-4 fill-white shrink-0" />
+                      <span>⚡ ¡Tomarme la Revancha ahora!</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleExplainError}
+                      disabled={isLoadingExplanation}
+                      className="w-full sm:flex-1 h-12 rounded-xl border-2 border-primary/40 bg-background text-primary font-bold text-xs gap-1.5 hover:bg-primary/10 whitespace-normal leading-tight px-3"
+                    >
+                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                      <span>Explicar mi error con la IA</span>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -413,8 +468,8 @@ export function QuizEngine() {
       </main>
 
       {/* Fixed Action Button */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/95 backdrop-blur-xl border-t-2 border-border">
-        <div className="flex gap-3">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/95 backdrop-blur-xl border-t-2 border-border z-20">
+        <div className="flex gap-2.5">
           {isPreviewMode ? (
             <>
               <Button
@@ -437,25 +492,39 @@ export function QuizEngine() {
             </>
           ) : (
             <>
-          {answerState.submitted && !answerState.isCorrect && !detailedExplanation && (
-            <Button
-              variant="outline"
-              onClick={handleExplainError}
-              disabled={isLoadingExplanation}
-              className="flex-1 h-14 rounded-2xl border-2 font-bold gap-2"
-            >
-              {isLoadingExplanation ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Cargando...
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-5 h-5" />
-                  Explicar Error
-                </>
-              )}
-            </Button>
+          {answerState.submitted && !answerState.isCorrect && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setModalInitialMode('revancha')
+                  setShowExplanationModal(true)
+                }}
+                className="flex-1 h-14 rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold text-xs sm:text-sm gap-1.5 hover:bg-amber-500/20 transition-all"
+              >
+                <Zap className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" />
+                <span className="truncate">⚡ Revancha</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleExplainError}
+                disabled={isLoadingExplanation}
+                className="flex-1 h-14 rounded-2xl border-2 border-primary/30 font-bold text-primary text-xs sm:text-sm gap-1.5 hover:bg-primary/10 transition-all"
+              >
+                {isLoadingExplanation ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                    <span className="truncate">Analizando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                    <span className="truncate">Explicar con IA</span>
+                  </>
+                )}
+              </Button>
+            </>
           )}
           
           {!answerState.submitted ? (
@@ -463,7 +532,7 @@ export function QuizEngine() {
               onClick={handleSubmit}
               disabled={answerState.selected === null}
               className={cn(
-                'flex-1 h-14 text-lg font-bold rounded-2xl shadow-lg transition-all',
+                'flex-1 h-14 text-base font-bold rounded-2xl shadow-lg transition-all',
                 'bg-gradient-to-r from-[var(--algebra)] to-[var(--algebra)]/80',
                 'hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]',
                 'disabled:opacity-50 disabled:shadow-none disabled:scale-100'
@@ -475,15 +544,15 @@ export function QuizEngine() {
             <Button
               onClick={handleNext}
               className={cn(
-                'flex-1 h-14 text-lg font-bold gap-2 rounded-2xl shadow-lg transition-all',
+                'flex-1 h-14 text-xs sm:text-sm font-bold gap-1.5 rounded-2xl shadow-lg transition-all',
                 'hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]',
                 answerState.isCorrect 
                   ? 'bg-gradient-to-r from-[var(--analysis)] to-[var(--analysis)]/80 shadow-[var(--analysis)]/30' 
                   : 'bg-gradient-to-r from-[var(--algebra)] to-[var(--algebra)]/80'
               )}
             >
-              {isLastQuestion ? 'Ver Resultados' : 'Siguiente'}
-              <ChevronRight className="w-5 h-5" />
+              <span className="truncate">{isLastQuestion ? 'Ver Resultados' : 'Siguiente'}</span>
+              <ChevronRight className="w-4 h-4 shrink-0" />
             </Button>
           )}
             </>
@@ -521,6 +590,23 @@ export function QuizEngine() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {showExplanationModal && currentQuestion && answerState.selected !== null && (
+        <ExplanationModal
+          open={showExplanationModal}
+          onClose={() => setShowExplanationModal(false)}
+          question={currentQuestion.question}
+          userAnswer={`${String.fromCharCode(65 + answerState.selected)}) ${currentQuestion.options[answerState.selected]}`}
+          correctAnswer={`${String.fromCharCode(65 + currentQuestion.correctAnswer)}) ${currentQuestion.options[currentQuestion.correctAnswer]}`}
+          explanation={detailedExplanation || currentQuestion.explanation}
+          topic={currentQuestion.topic}
+          topicName={currentQuestion.topicName}
+          subject={config?.subjectName}
+          nivel={config?.nivel}
+          grado={config?.grado}
+          initialMode={modalInitialMode}
+        />
+      )}
     </div>
   )
 }

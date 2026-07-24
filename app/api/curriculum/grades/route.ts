@@ -20,7 +20,13 @@ export async function GET(req: Request) {
       WHERE nivel = ${nivel}
       ORDER BY grado
     `
-    return NextResponse.json({ grades: rows.map((r) => r.grado) })
+    const grades = rows.map((r: any) => r.grado)
+    grades.sort((a: string, b: string) => {
+      const numA = parseInt(a, 10) || 0
+      const numB = parseInt(b, 10) || 0
+      return numA - numB
+    })
+    return NextResponse.json({ grades })
   } catch (error) {
     return NextResponse.json(
       { error: 'Error al obtener grados', details: error instanceof Error ? error.message : String(error) },

@@ -76,7 +76,7 @@ export default function HistoryPage() {
   const [loadingDetails, setLoadingDetails] = useState<string | null>(null)
   const [explanations, setExplanations] = useState<Record<string, string>>({})
   const [loadingExplanation, setLoadingExplanation] = useState<string | null>(null)
-  const [subjectFilter, setSubjectFilter] = useState<SubjectFilter>('all')
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all')
 
   useEffect(() => {
@@ -98,14 +98,19 @@ export default function HistoryPage() {
     fetchHistory()
   }, [isLoaded, isSignedIn])
 
+  const uniqueSubjects = useMemo(() => {
+    const list = Array.from(new Set(attempts.map((a) => a.subject).filter(Boolean)))
+    return ['all', ...list]
+  }, [attempts])
+
   const filteredAttempts = useMemo(() => {
     return attempts.filter((a) => {
       const subjectMatch =
-        subjectFilter === 'all' || getSubjectKey(a.subject) === subjectFilter
+        selectedSubjectFilter === 'all' || a.subject === selectedSubjectFilter
       const modeMatch = modeFilter === 'all' || a.mode === modeFilter
       return subjectMatch && modeMatch
     })
-  }, [attempts, subjectFilter, modeFilter])
+  }, [attempts, selectedSubjectFilter, modeFilter])
 
   // Stats derived from ALL attempts (no filters)
   const stats = useMemo(() => {
@@ -298,24 +303,22 @@ export default function HistoryPage() {
                 Filtros
               </h2>
               <div className="flex flex-wrap gap-2">
-                {(['all', 'algebra', 'analisis', 'probabilidad'] as SubjectFilter[]).map((s) => {
-                  const Icon = s === 'all' ? BookOpen : subjectIcon[s]
-                  const active = subjectFilter === s
+                {uniqueSubjects.map((s) => {
+                  const active = selectedSubjectFilter === s
                   return (
                     <button
                       key={s}
                       type="button"
-                      onClick={() => setSubjectFilter(s)}
+                      onClick={() => setSelectedSubjectFilter(s)}
                       className={cn(
                         'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all',
                         active
-                          ? 'text-white border-transparent shadow-md'
+                          ? 'bg-primary text-primary-foreground border-transparent shadow-md'
                           : 'bg-card/80 border-border text-muted-foreground hover:border-primary/40'
                       )}
-                      style={active ? { backgroundColor: s === 'all' ? 'var(--primary)' : subjectColorVar[s] } : {}}
                     >
-                      <Icon className="w-3.5 h-3.5" />
-                      {subjectLabel[s]}
+                      <BookOpen className="w-3.5 h-3.5" />
+                      {s === 'all' ? 'Todas las materias' : s}
                     </button>
                   )
                 })}

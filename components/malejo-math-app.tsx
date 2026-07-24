@@ -24,6 +24,9 @@ export function MalejoMathApp() {
     updateStreak,
     updateSubjectAverage,
     addWeakPoint,
+    removeWeakPoint,
+    userProfile,
+    setTeacherSection,
   } = useAppStore()
   const { data: session, status } = useSession()
   const { toast } = useToast()
@@ -46,9 +49,8 @@ export function MalejoMathApp() {
         setStatsUpdatedForQuizId(attemptId)
 
         const { answers, config, questions } = currentQuiz
-        const correctAnswers = answers.filter(a => a.isCorrect)
         const incorrectAnswers = answers.filter(a => !a.isCorrect)
-        const correct = correctAnswers.length
+        const correct = answers.filter(a => a.isCorrect).length
         const total = questions.length
         const score = Number(((correct / total) * 10).toFixed(2))
 
@@ -56,17 +58,43 @@ export function MalejoMathApp() {
         const passed = score >= 6
         updateStreak(passed)
 
-        // Add average and weak points for incorrect answers
+        // Add average
         updateSubjectAverage(config.subject, score)
 
-        incorrectAnswers.forEach(a => {
-          if (a.topic && a.topicName) {
-            addWeakPoint(a.topic, a.topicName, config.subject)
+        // Track stats per topic in this quiz
+        const topicStatsMap = new Map<string, { correct: number; total: number; topicName?: string }>()
+
+        answers.forEach(a => {
+          const topicKey = a.topic || a.topicName
+          if (!topicKey) return
+          const current = topicStatsMap.get(topicKey) || { correct: 0, total: 0, topicName: a.topicName }
+          topicStatsMap.set(topicKey, {
+            correct: current.correct + (a.isCorrect ? 1 : 0),
+            total: current.total + 1,
+            topicName: a.topicName || current.topicName
+          })
+        })
+
+        // Check single topic in config (for micro-quizzes / entrenamientos)
+        if (config.topics && config.topics.length === 1 && incorrectAnswers.length === 0) {
+          const singleTopic = config.topics[0]
+          removeWeakPoint(singleTopic.id)
+          if (singleTopic.name) removeWeakPoint(singleTopic.name)
+        }
+
+        topicStatsMap.forEach((stats, topicKey) => {
+          if (stats.correct === stats.total && stats.total > 0) {
+            // Student mastered this topic! Remove it from weak points
+            removeWeakPoint(topicKey)
+            if (stats.topicName) removeWeakPoint(stats.topicName)
+          } else if (stats.correct < stats.total) {
+            // Add or increment weak point for topic
+            addWeakPoint(topicKey, stats.topicName || topicKey, config.subjectName || config.subject, config.nivel, config.grado)
           }
         })
       }
     }
-  }, [activeView, currentQuiz, statsUpdatedForQuizId, updateStreak, updateSubjectAverage, addWeakPoint])
+  }, [activeView, currentQuiz, statsUpdatedForQuizId, updateStreak, updateSubjectAverage, addWeakPoint, removeWeakPoint])
 
   if (status === 'loading') return null
 
@@ -80,7 +108,7 @@ export function MalejoMathApp() {
     )
   }
 
-  const isDocente = session?.user?.role === 'DOCENTE'
+  const isDocente = (userProfile?.role ?? session?.user?.role) === 'DOCENTE'
 
   // ── Shared quiz generation logic ───────────────────────────────────────────
   const generateQuiz = async (selection: CurriculumSelection): Promise<Question[]> => {
@@ -105,6 +133,9 @@ export function MalejoMathApp() {
         topics: selection.selectedTopics.map((t) => ({ id: t.id, name: t.name })),
         mode: selection.mode,
         questionCount: selection.questionCount,
+        nivel: selection.nivel,
+        grado: selection.grado,
+        difficulty: selection.difficulty,
         pedagogyContext: [
           `Nivel: ${selection.nivel}`,
           selection.grado ? `Grado/Año: ${selection.grado}` : null,
@@ -137,16 +168,24 @@ export function MalejoMathApp() {
         // DOCENTE: show generated questions for review/edit/export
         setGeneratedQuestions(questions)
         setActiveView('dashboard') // placeholder — overridden by generatedQuestions guard below
-        setGeneratedQuestions(questions) // signals the preview
       } else {
-        // ALUMNO: start quiz directly
+        // ALUMNO: start quiz directly without showing teacher review screen
+        setGeneratedQuestions(null)
         startQuiz(
           {
             subject: selection.materia,
             subjectName: selection.materia,
+            nivel: selection.nivel,
+            grado: selection.grado,
+            difficulty: selection.difficulty,
             topics: selection.selectedTopics.map((t) => ({ id: t.id, name: t.name })),
             mode: selection.mode,
             questionCount: questions.length,
+            pedagogyContext: [
+              `Nivel: ${selection.nivel}`,
+              selection.grado ? `Grado/Año: ${selection.grado}` : null,
+              `Dificultad: ${selection.difficulty}`,
+            ].filter(Boolean).join(' | '),
           },
           questions,
         )
@@ -164,8 +203,8 @@ export function MalejoMathApp() {
     }
   }
 
-  // DOCENTE review screen (overrides normal routing when questions are ready)
-  if (isDocente && generatedQuestions && generatedQuestions.length > 0 && lastSelection) {
+  // DOCENTE review screen (overrides normal routing when questions are ready and activeView is not quiz/results)
+  if (isDocente && activeView !== 'quiz' && activeView !== 'results' && generatedQuestions && generatedQuestions.length > 0 && lastSelection) {
     return (
       <>
         <TeacherQuizGenerated
@@ -174,6 +213,11 @@ export function MalejoMathApp() {
           onBack={() => {
             setGeneratedQuestions(null)
             setActiveView('selector')
+          }}
+          onGoToSavedQuizzes={() => {
+            setGeneratedQuestions(null)
+            setTeacherSection('cuestionarios')
+            setActiveView('dashboard')
           }}
         />
         <Toaster />

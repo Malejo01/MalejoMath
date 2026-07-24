@@ -51,7 +51,7 @@ interface AppState {
   finishQuiz: () => QuizResult
   updateStreak: (passed: boolean) => void
   updateSubjectAverage: (subject: string, score: number) => void
-  addWeakPoint: (topic: string, topicName: string, subject: string) => void
+  addWeakPoint: (topic: string, topicName: string, subject: string, nivel?: string, grado?: string, misconceptionType?: string) => void
   removeWeakPoint: (topic: string) => void
   addUsedQuestionIds: (ids: string[]) => void
   resetQuiz: () => void
@@ -260,14 +260,20 @@ export const useAppStore = create<AppState>()(
         }
       }),
       
-      addWeakPoint: (topic, topicName, subject) => set((state) => {
+      addWeakPoint: (topic, topicName, subject, nivel, grado, misconceptionType) => set((state) => {
         const existing = state.userProgress.weakPoints.find(wp => wp.topic === topic)
         if (existing) {
           return {
             userProgress: {
               ...state.userProgress,
               weakPoints: state.userProgress.weakPoints.map(wp =>
-                wp.topic === topic ? { ...wp, count: wp.count + 1 } : wp
+                wp.topic === topic ? {
+                  ...wp,
+                  count: wp.count + 1,
+                  nivel: nivel || wp.nivel,
+                  grado: grado || wp.grado,
+                  misconceptionType: misconceptionType || wp.misconceptionType
+                } : wp
               )
             }
           }
@@ -275,7 +281,7 @@ export const useAppStore = create<AppState>()(
         return {
           userProgress: {
             ...state.userProgress,
-            weakPoints: [...state.userProgress.weakPoints, { topic, topicName, subject, count: 1 }]
+            weakPoints: [...state.userProgress.weakPoints, { topic, topicName, subject, count: 1, nivel, grado, misconceptionType }]
           }
         }
       }),
@@ -283,7 +289,7 @@ export const useAppStore = create<AppState>()(
       removeWeakPoint: (topic) => set((state) => ({
         userProgress: {
           ...state.userProgress,
-          weakPoints: state.userProgress.weakPoints.filter(wp => wp.topic !== topic)
+          weakPoints: state.userProgress.weakPoints.filter(wp => wp.topic !== topic && wp.topicName !== topic)
         }
       })),
       

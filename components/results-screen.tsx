@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import confetti from 'canvas-confetti'
 import type { Answer } from '@/lib/types'
 import { QuizModeDialog } from './quiz-mode-dialog'
+import { ExplanationModal } from './explanation-modal'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 
@@ -110,11 +111,21 @@ export function ResultsScreen() {
     }
   }, [results.passed])
 
+  const [selectedModalAnswer, setSelectedModalAnswer] = useState<Answer | null>(null)
+  const [selectedModalExplanation, setSelectedModalExplanation] = useState<string>('')
+  const [isExplanationModalOpen, setIsExplanationModalOpen] = useState(false)
+
   const handleExplainError = useCallback(async (answer: Answer) => {
-    if (explanations[answer.questionId]) return
-    
+    setSelectedModalAnswer(answer)
+    setIsExplanationModalOpen(true)
+
+    if (explanations[answer.questionId]) {
+      setSelectedModalExplanation(explanations[answer.questionId])
+      return
+    }
+
     setLoadingExplanation(answer.questionId)
-    
+
     try {
       const response = await fetch('/api/explain-error', {
         method: 'POST',
@@ -127,17 +138,34 @@ export function ResultsScreen() {
           topic: answer.topicName,
           subject: config?.subjectName,
           pedagogyContext: config?.pedagogyContext,
+          nivel: config?.nivel,
+          grado: config?.grado,
         })
       })
-      
+
       const data = await response.json()
       setExplanations(prev => ({ ...prev, [answer.questionId]: data.explanation }))
+      setSelectedModalExplanation(data.explanation)
+
+      if (data.tipText && config?.subjectName) {
+        fetch('/api/user/tips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: config.subjectName,
+            topicId: answer.topic,
+            topicName: answer.topicName,
+            misconceptionType: data.misconceptionType || 'Confusión conceptual',
+            tip: data.tipText,
+          }),
+        }).catch((err) => console.warn('Could not auto-save tip:', err))
+      }
     } catch {
-      setExplanations(prev => ({ ...prev, [answer.questionId]: 'No se pudo cargar la explicacion.' }))
+      setSelectedModalExplanation('No se pudo cargar la explicación. Por favor intenta de nuevo.')
     } finally {
       setLoadingExplanation(null)
     }
-  }, [explanations])
+  }, [explanations, config])
 
   const handleRetry = useCallback(async (mode: 'teorico' | 'practico' | 'mixto') => {
     if (!config) return
@@ -152,6 +180,9 @@ export function ResultsScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject: config.subjectName,
+          nivel: config.nivel,
+          grado: config.grado,
+          difficulty: config.difficulty,
           topics: config.topics,
           mode,
           questionCount: config.questionCount,
@@ -187,28 +218,57 @@ export function ResultsScreen() {
     router.push('/history')
   }
 
+  const isPrimario = config?.nivel === 'Primario'
+
+  // Header emotional feedback helper
+  const getEmotionalHeader = () => {
+    if (results.score < 6) {
+      return {
+        badgeText: 'A seguir practicando',
+        title: isPrimario ? '¡A no desanimarse! 💡' : '¡Sigue practicando!',
+        subtitle: isPrimario ? 'Cada error es una oportunidad para aprender. ¡Mirá tus recomendaciones abajo!' : 'Repasá los temas fallados para mejorar tu rendimiento.',
+        badgeClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30',
+        emojiIcon: '💡',
+      }
+    }
+    if (results.score < 9) {
+      return {
+        badgeText: '¡Buen trabajo!',
+        title: isPrimario ? '¡Muy bien hecho! 🌟' : '¡Buen trabajo!',
+        subtitle: isPrimario ? '¡Estás aprendiendo muchísimo! Mirá los detalles para perfeccionarlo.' : '¡Gran avance en la materia!',
+        badgeClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30',
+        emojiIcon: '🌟',
+      }
+    }
+    return {
+      badgeText: '¡Excelente!',
+      title: isPrimario ? '¡ESPECTACULAR! 🚀' : '¡Excelente trabajo!',
+      subtitle: isPrimario ? '¡Sos un/a genio/a! Dominaste este cuestionario por completo.' : '¡Rendimiento sobresaliente!',
+      badgeClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30',
+      emojiIcon: '🚀',
+    }
+  }
+
+  const emotionalInfo = getEmotionalHeader()
+
   return (
     <div className="min-h-screen relative">
       <MathBackground />
       
       {/* Header */}
-      <header className="px-4 py-8 text-center relative z-10">
+      <header className="px-4 py-8 text-center relative z-10 space-y-2">
         <div className={cn(
-          'inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4',
-          results.passed 
-            ? 'bg-[var(--analysis-light)] text-[var(--analysis)]' 
-            : 'bg-orange-100 text-orange-600'
+          'inline-flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs shadow-sm',
+          emotionalInfo.badgeClass
         )}>
-          {results.passed ? <Trophy className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-          <span className="font-bold text-sm">
-            {results.passed ? 'Aprobado' : 'A seguir practicando'}
-          </span>
+          <span>{emotionalInfo.emojiIcon}</span>
+          <span>{emotionalInfo.badgeText}</span>
         </div>
-        <h1 className="text-2xl font-black text-foreground">
-          {results.passed ? 'Excelente trabajo!' : 'Sigue practicando!'}
+        <h1 className="text-2xl sm:text-3xl font-black text-foreground">
+          {emotionalInfo.title}
         </h1>
-        <p className="text-muted-foreground mt-1 font-medium">
-          {config?.mode === 'teorico' ? 'Cuestionario Teorico' : config?.mode === 'practico' ? 'Cuestionario Practico' : 'Cuestionario Mixto'}
+        <p className="text-xs sm:text-sm text-muted-foreground max-w-sm mx-auto font-medium leading-relaxed">
+          {emotionalInfo.subtitle}
         </p>
       </header>
 
@@ -216,7 +276,7 @@ export function ResultsScreen() {
       <main className="px-4 pb-[calc(9rem+env(safe-area-inset-bottom))] space-y-5 relative z-10">
         {/* Score Card */}
         <Card className={cn(
-          'p-6 text-center border-2 overflow-hidden relative',
+          'p-6 text-center border-2 overflow-hidden relative rounded-3xl shadow-xl',
           results.passed 
             ? 'border-[var(--analysis)]/30 bg-gradient-to-br from-[var(--analysis-light)] to-white' 
             : 'border-orange-200 bg-gradient-to-br from-orange-50 to-white'
@@ -447,47 +507,71 @@ export function ResultsScreen() {
       </main>
 
       {/* Fixed Action Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t-2 border-border bg-card px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,23,42,0.12)]">
-        <div className="max-w-md mx-auto space-y-3">
-          {isAlumno && (
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t-2 border-border bg-card/95 backdrop-blur-xl px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,23,42,0.12)]">
+        <div className="max-w-md mx-auto space-y-2.5">
+          {!results.passed && (
             <Button
-              variant="outline"
-              onClick={handleGoToHistory}
-              className="w-full h-12 gap-2 rounded-2xl border-2 font-bold text-primary border-primary hover:bg-primary/5"
-            >
-              <History className="w-5 h-5" />
-              Ver mi Historial
-            </Button>
-          )}
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setShowRetryModal(true)}
+              onClick={() => handleRetry('practico')}
               disabled={isRetrying}
-              className="flex-1 h-14 gap-2 rounded-2xl border-2 font-bold"
+              className="w-full h-13 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-sm gap-2 shadow-lg active:scale-95 transition-all"
             >
               {isRetrying ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Generando...
+                  <Loader2 className="w-5 h-5 animate-spin fill-white" />
+                  <span>Generando Revancha...</span>
                 </>
               ) : (
                 <>
-                  <RotateCcw className="w-5 h-5" />
-                  Reintentar
+                  <RotateCcw className="w-5 h-5 text-white" />
+                  <span>⚡ ¡Tomar Revancha de todo el Cuestionario!</span>
                 </>
               )}
             </Button>
+          )}
+
+          <div className="flex gap-2.5">
+            {results.passed && (
+              <Button
+                variant="outline"
+                onClick={() => setShowRetryModal(true)}
+                disabled={isRetrying}
+                className="flex-1 h-13 gap-2 rounded-2xl border-2 font-bold text-xs sm:text-sm"
+              >
+                {isRetrying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Generando...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Volver a intentar</span>
+                  </>
+                )}
+              </Button>
+            )}
+
+            {isAlumno && (
+              <Button
+                variant="outline"
+                onClick={handleGoToHistory}
+                className="flex-1 h-13 gap-2 rounded-2xl border-2 font-bold text-primary border-primary/30 text-xs sm:text-sm hover:bg-primary/5"
+              >
+                <History className="w-4 h-4" />
+                <span>Historial</span>
+              </Button>
+            )}
+
             <Button
               onClick={handleGoHome}
               className={cn(
-                'flex-1 h-14 gap-2 rounded-2xl font-bold shadow-lg',
+                'flex-1 h-13 gap-2 rounded-2xl font-bold shadow-lg text-sm text-white',
                 'bg-gradient-to-r from-[var(--algebra)] to-[var(--analysis)]',
                 'hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all'
               )}
             >
-              <Home className="w-5 h-5" />
-              Continuar
+              <Home className="w-4 h-4" />
+              <span>Continuar</span>
             </Button>
           </div>
         </div>
@@ -502,6 +586,22 @@ export function ResultsScreen() {
         description="Selecciona si quieres regenerar este cuestionario en modo teorico, practico o mixto con los mismos temas."
         showQuestionCountSelector={false}
       />
+
+      {isExplanationModalOpen && selectedModalAnswer && (
+        <ExplanationModal
+          open={isExplanationModalOpen}
+          onClose={() => setIsExplanationModalOpen(false)}
+          question={selectedModalAnswer.questionText}
+          userAnswer={`${String.fromCharCode(65 + selectedModalAnswer.selectedAnswer)}) ${selectedModalAnswer.options[selectedModalAnswer.selectedAnswer]}`}
+          correctAnswer={`${String.fromCharCode(65 + selectedModalAnswer.correctAnswer)}) ${selectedModalAnswer.options[selectedModalAnswer.correctAnswer]}`}
+          explanation={selectedModalExplanation || 'Cargando explicación con IA...'}
+          topic={selectedModalAnswer.topic}
+          topicName={selectedModalAnswer.topicName}
+          subject={config?.subjectName}
+          nivel={config?.nivel}
+          grado={config?.grado}
+        />
+      )}
     </div>
   )
 }

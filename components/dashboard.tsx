@@ -1,5 +1,7 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
+
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAppStore } from '@/lib/store'
 import { subjects } from '@/lib/data'
@@ -8,6 +10,7 @@ import { SUBJECT_COLOR_CLASS } from '@/lib/subject-appearance'
 import { SubjectTabs } from './subject-tabs'
 import { SubjectContent } from './subject-content'
 import { WeakPointsSection } from './weak-points-section'
+import { TipsChest } from './tips-chest'
 import { MathBackground } from './math-background'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,6 +33,7 @@ import {
   Sigma,
   Calculator,
   ChartLine,
+  History,
   FlaskConical,
   Atom,
   Ruler,
@@ -57,7 +61,7 @@ import { useSession } from 'next-auth/react'
 import { TeacherProgramUploadModal } from './teacher-program-upload-modal'
 import { useToast } from '@/hooks/use-toast'
 import { exportQuizToMoodleGift } from '@/lib/moodle-export'
-import type { TeacherProgram, TeacherQuiz } from '@/lib/types'
+import type { TeacherProgram, TeacherQuiz, StudentTip } from '@/lib/types'
 
 type TeacherProgramApiShape = TeacherProgram & {
   user_id?: string
@@ -149,6 +153,7 @@ export function Dashboard() {
   const { data: session, status } = useSession()
   const isSignedIn = status === 'authenticated'
   const { toast } = useToast()
+  const router = useRouter()
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null)
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -160,10 +165,20 @@ export function Dashboard() {
   const [showCreateExamples, setShowCreateExamples] = useState(false)
   const [showQuizExamples, setShowQuizExamples] = useState(false)
   const [quizSubjectFilter, setQuizSubjectFilter] = useState<string>('all')
+  const [studentTips, setStudentTips] = useState<StudentTip[]>([])
   const [performedQuizzes, setPerformedQuizzes] = useState<Record<string, unknown>[]>([])
   const [expandedQuizId, setExpandedQuizId] = useState<number | null>(null)
   const [exportingQuizId, setExportingQuizId] = useState<number | null>(null)
   const mySubjectsScrollRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    fetch('/api/user/tips')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.tips)) setStudentTips(data.tips)
+      })
+      .catch((err) => console.warn('Could not fetch student tips:', err))
+  }, [])
   const [canScrollMySubjectsLeft, setCanScrollMySubjectsLeft] = useState(false)
   const [canScrollMySubjectsRight, setCanScrollMySubjectsRight] = useState(false)
 
@@ -619,33 +634,39 @@ export function Dashboard() {
               <WeakPointsSection weakPoints={userProgress.weakPoints} />
             )}
 
-            {/* Recent Activity Section */}
+            {/* Cofre de Tips / Mis Apuntes Section */}
+            <TipsChest tips={studentTips} />
+
+            {/* Recent Activity Button */}
             {performedQuizzes.length > 0 && (
-              <section className="space-y-3">
-                <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider px-1">
-                  Actividad Reciente
-                </h2>
-                <div className="space-y-2">
-                  {performedQuizzes.slice(0, 5).map((attempt: any) => (
-                    <Card key={attempt.id} className="p-4 border border-border bg-card/80 backdrop-blur-sm flex items-center justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <p className="font-bold text-sm text-foreground">{attempt.subject}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {attempt.mode === 'teorico' ? 'Teórico' : attempt.mode === 'practico' ? 'Práctico' : 'Mixto'} · {new Date(attempt.completed_at).toLocaleDateString('es-AR')}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className={cn(
-                          "text-lg font-black",
-                          attempt.score >= 6 ? "text-emerald-500 dark:text-emerald-400" : "text-orange-500 dark:text-orange-400"
-                        )}>
-                          {Number(attempt.score).toFixed(1)}
-                        </span>
-                        <span className="text-xs text-muted-foreground font-bold">/10</span>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
+              <section className="mt-6">
+                <Card
+                  onClick={() => router.push('/history')}
+                  className="p-4 border-2 border-border/80 bg-card hover:border-primary/50 hover:shadow-md transition-all cursor-pointer rounded-2xl flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-transform shrink-0">
+                      <History className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-foreground text-sm group-hover:text-primary transition-colors">
+                        Historial de Evaluaciones y Actividad Reciente
+                      </h4>
+                      <p className="text-xs text-muted-foreground font-medium">
+                        Tienes {performedQuizzes.length} evaluación{performedQuizzes.length > 1 ? 'es' : ''} realizada{performedQuizzes.length > 1 ? 's' : ''} en tu historial
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-3 text-xs font-bold text-primary gap-1 group-hover:translate-x-0.5 transition-transform shrink-0"
+                  >
+                    <span>Ver Historial</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </Card>
               </section>
             )}
           </>

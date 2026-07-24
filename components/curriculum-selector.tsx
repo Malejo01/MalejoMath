@@ -53,7 +53,7 @@ const NIVEL_OPTIONS: { value: Nivel; label: string; sub: string; Icon: React.Ele
   {
     value: 'Secundario',
     label: 'Nivel Secundario',
-    sub: '1er a 6to año',
+    sub: '1er a 5to año',
     Icon: GraduationCap,
     color: 'from-violet-500 to-purple-600',
   },
@@ -340,13 +340,17 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
         {step === 'grado' && (
           <div>
             <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">{nivel}</p>
-            <h1 className="text-2xl font-bold text-foreground mb-1">¿Qué año / grado?</h1>
-            <p className="text-muted-foreground text-sm mb-8">Elegí el año para ver las materias disponibles.</p>
+            <h1 className="text-2xl font-bold text-foreground mb-1">
+              {nivel === 'Primario' ? '¿Qué grado?' : '¿Qué año?'}
+            </h1>
+            <p className="text-muted-foreground text-sm mb-8">
+              {nivel === 'Primario' ? 'Elegí el grado para ver las materias disponibles.' : 'Elegí el año para ver las materias disponibles.'}
+            </p>
 
             {loadingData ? (
               <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
             ) : grades.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-12">No hay grados cargados para este nivel todavía.</p>
+              <p className="text-muted-foreground text-sm text-center py-12">No hay contenidos cargados para este nivel todavía.</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {grades.map((g) => (
@@ -355,7 +359,7 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
                     onClick={() => handleGrado(g)}
                     className="p-4 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 font-semibold text-sm text-foreground transition-all active:scale-95"
                   >
-                    {g}
+                    {nivel === 'Primario' ? g.replace(/Año/gi, 'Grado') : g}
                   </button>
                 ))}
               </div>
@@ -366,14 +370,16 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
         {/* ── STEP: Materia ────────────────────────────────────────────────── */}
         {step === 'materia' && (
           <div>
-            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">{nivel} · {grado}</p>
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">
+              {nivel} · {nivel === 'Primario' ? grado.replace(/Año/gi, 'Grado') : grado}
+            </p>
             <h1 className="text-2xl font-bold text-foreground mb-1">¿Qué materia?</h1>
             <p className="text-muted-foreground text-sm mb-8">Seleccioná la materia para ver los ejes y temas.</p>
 
             {loadingData ? (
               <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
             ) : subjects.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-12">No hay materias cargadas para este grado todavía.</p>
+              <p className="text-muted-foreground text-sm text-center py-12">No hay materias cargadas para este nivel todavía.</p>
             ) : (
               <div className="grid gap-3">
                 {subjects.map((s) => (
@@ -394,7 +400,9 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
         {/* ── STEP: Topics (Ejes + Temas checkboxes) ───────────────────────── */}
         {step === 'topics' && (
           <div>
-            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">{nivel} · {grado} · {materia}</p>
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">
+              {nivel} · {nivel === 'Primario' ? grado.replace(/Año/gi, 'Grado') : grado} · {materia}
+            </p>
             <h1 className="text-2xl font-bold text-foreground mb-1">Seleccioná los temas</h1>
             <p className="text-muted-foreground text-sm mb-6">Elegí uno o más temas. Podés seleccionar ejes completos.</p>
 
@@ -582,7 +590,7 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
             <h1 className="text-2xl font-bold text-foreground mb-1">Parámetros del cuestionario</h1>
             {nivel !== 'Superior' && (
               <p className="text-muted-foreground text-sm mb-8">
-                {selectedCount} tema{selectedCount !== 1 ? 's' : ''} de <strong>{materia}</strong> · {grado} · {nivel}
+                {selectedCount} tema{selectedCount !== 1 ? 's' : ''} de <strong>{materia}</strong> · {nivel === 'Primario' ? grado.replace(/Año/gi, 'Grado') : grado} · {nivel}
               </p>
             )}
 
