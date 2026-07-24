@@ -27,7 +27,8 @@ declare module '@auth/core/jwt' {
 export const { handlers, signIn, signOut, auth } = NextAuth({
   // AUTH_SECRET is the canonical name in NextAuth v5.
   // Also accepts NEXTAUTH_SECRET for backward compatibility.
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  trustHost: true,
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? 'malejo-math-fallback-secret-key-2026',
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
