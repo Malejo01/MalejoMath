@@ -1,21 +1,37 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { GraduationCap, LogIn, ClipboardList, LogOut, ChevronDown } from 'lucide-react'
+import { GraduationCap, LogIn, ClipboardList, LogOut, ChevronDown, Menu, Home, Sparkles, GraduationCap as TeacherIcon } from 'lucide-react'
 import { useSession, signIn, signOut } from 'next-auth/react'
 import { StreakBadge } from './streak-badge'
 import { useAppStore } from '@/lib/store'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 import type { UserRole } from '@/lib/types'
+
+const NAV_LINKS = [
+  { href: '/', label: 'Inicio', icon: Home },
+  { href: '/tips', label: 'Cofre de Tips', icon: Sparkles },
+  { href: '/history', label: 'Historial', icon: ClipboardList },
+] as const
 
 export function Navbar() {
   const { userProgress, userProfile, setUserProfile, setUserRole } = useAppStore()
   const { data: session, status, update: updateSession } = useSession()
   const isSignedIn = status === 'authenticated'
+  const isTeacher = userProfile?.role === 'DOCENTE'
+  const pathname = usePathname()
   const [isUpdatingRole, setIsUpdatingRole] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const navLinks = isTeacher
+    ? [...NAV_LINKS, { href: '/teacher', label: 'Panel Docente', icon: TeacherIcon }]
+    : NAV_LINKS
 
   // Close menu on outside click
   useEffect(() => {
@@ -94,6 +110,30 @@ export function Navbar() {
           </div>
         </div>
 
+        {/* Center navigation (desktop) */}
+        {isSignedIn && (
+          <nav className="hidden lg:flex items-center gap-1">
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all',
+                    isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                  )}
+                >
+                  <link.icon className="w-4 h-4" />
+                  {link.label}
+                </Link>
+              )
+            })}
+          </nav>
+        )}
+
         {/* Right side actions */}
         <div className="flex items-center gap-4">
           <div className="hidden xs:block">
@@ -121,7 +161,7 @@ export function Navbar() {
                 onValueChange={(value) => handleRoleChange(value as UserRole)}
                 disabled={isUpdatingRole}
               >
-                <SelectTrigger className="h-9 w-[130px] rounded-xl bg-secondary border-border/60">
+                <SelectTrigger className="hidden sm:flex h-9 w-[130px] rounded-xl bg-secondary border-border/60">
                   <SelectValue placeholder="Rol" />
                 </SelectTrigger>
                 <SelectContent>
@@ -130,12 +170,66 @@ export function Navbar() {
                 </SelectContent>
               </Select>
 
-              <Link href="/history">
-                <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground font-bold text-sm hover:bg-secondary/80 transition-all active:scale-95 border border-border/50">
-                  <ClipboardList className="w-4 h-4 text-primary" />
-                  <span className="hidden sm:inline">Historial Evaluaciones</span>
-                </button>
-              </Link>
+              {/* Mobile nav trigger */}
+              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <button
+                    className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl border border-border/50 bg-secondary hover:bg-secondary/80 transition-all"
+                    aria-label="Abrir menú de navegación"
+                  >
+                    <Menu className="w-5 h-5" />
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-72">
+                  <SheetHeader>
+                    <SheetTitle className="[font-family:var(--font-brand)]">Malejo Math</SheetTitle>
+                  </SheetHeader>
+                  <nav className="flex flex-col gap-1 px-4">
+                    {navLinks.map((link) => {
+                      const isActive = pathname === link.href
+                      return (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={cn(
+                            'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all',
+                            isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                          )}
+                        >
+                          <link.icon className="w-4 h-4" />
+                          {link.label}
+                        </Link>
+                      )
+                    })}
+                  </nav>
+                  <div className="px-4 pt-2 border-t border-border/50 mt-2 space-y-3">
+                    <div className="sm:hidden">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 px-1">Rol</p>
+                      <Select
+                        value={userProfile?.role ?? ''}
+                        onValueChange={(value) => handleRoleChange(value as UserRole)}
+                        disabled={isUpdatingRole}
+                      >
+                        <SelectTrigger className="w-full h-9 rounded-xl bg-secondary border-border/60">
+                          <SelectValue placeholder="Rol" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALUMNO">Alumno</SelectItem>
+                          <SelectItem value="DOCENTE">Docente</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <button
+                      onClick={() => signOut({ callbackUrl: '/' })}
+                      className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-semibold text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Cerrar sesión
+                    </button>
+                  </div>
+                </SheetContent>
+              </Sheet>
 
               {/* User avatar + dropdown */}
               <div className="relative" ref={menuRef}>

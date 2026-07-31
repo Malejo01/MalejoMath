@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, X, ChevronRight, Zap, Loader2, Target, BookOpen } from 'lucide-react'
@@ -17,9 +18,12 @@ import { QuizModeDialog } from './quiz-mode-dialog'
 
 interface WeakPointsSectionProps {
   weakPoints: WeakPoint[]
+  /** 'preview' shows a capped list with a link to the full view (used on Inicio). Defaults to 'full'. */
+  variant?: 'preview' | 'full'
+  limit?: number
 }
 
-export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
+export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakPointsSectionProps) {
   const { removeWeakPoint, setActiveView, startQuiz, getUsedQuestionIds, currentQuiz, userProfile } = useAppStore()
   const [loadingSubjectId, setLoadingSubjectId] = useState<string | null>(null)
   const [practiceModalSubjectId, setPracticeModalSubjectId] = useState<string | null>(null)
@@ -123,20 +127,29 @@ export function WeakPointsSection({ weakPoints }: WeakPointsSectionProps) {
     return acc
   }, {} as Record<string, WeakPoint[]>)
 
-  const entries = Object.entries(groupedWeakPoints)
-  if (entries.length === 0) return null
+  const allEntries = Object.entries(groupedWeakPoints)
+  if (allEntries.length === 0) return null
+  const entries = limit ? allEntries.slice(0, limit) : allEntries
 
   return (
-    <section className="space-y-3 mt-6">
-      <div className="flex items-center gap-2 px-1">
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white shadow-sm">
-          <Zap className="w-4 h-4 fill-white" />
+    <section className="space-y-3">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white shadow-sm">
+            <Zap className="w-4 h-4 fill-white" />
+          </div>
+          <h3 className="font-bold text-foreground text-lg">Temas a Reforzar</h3>
         </div>
-        <h3 className="font-bold text-foreground text-lg">Temas a Reforzar</h3>
+        {variant === 'preview' && (
+          <Link href="/history?tab=reforzar" className="flex items-center gap-1 text-xs font-bold text-orange-600 dark:text-orange-400 hover:translate-x-0.5 transition-transform shrink-0">
+            Ver todos
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        )}
       </div>
 
       {/* Grid of Subject Cards */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         {entries.map(([subjectId, points]) => {
           const firstGrado = points[0]?.grado
           return (
