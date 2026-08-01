@@ -278,7 +278,7 @@ async function requireTeacher(userId: string) {
     LIMIT 1
   `
 
-  return rows.length > 0 && rows[0].role === 'teacher'
+  return rows.length > 0 && rows[0].role === 'DOCENTE'
 }
 
 function normalizeUnits(parsed: ParsedProgram) {
