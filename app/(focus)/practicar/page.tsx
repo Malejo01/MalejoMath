@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { useAppStore } from '@/lib/store'
 import { CurriculumSelector, type CurriculumSelection } from '@/components/curriculum-selector'
+import type { Nivel } from '@/lib/nivel-options'
 import { TeacherQuizGenerated } from '@/components/teacher-quiz-generated'
 import { LoadingScreen } from '@/components/loading-screen'
 import { useToast } from '@/hooks/use-toast'
@@ -131,6 +132,8 @@ export default function PracticarPage() {
     <CurriculumSelector
       onStartQuiz={handleStartQuiz}
       onCancel={() => router.push('/')}
+      initialNivel={!isDocente ? (session?.user?.nivel as Nivel | null) : null}
+      initialGrado={!isDocente ? session?.user?.grado : null}
     />
   )
 }

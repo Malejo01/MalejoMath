@@ -1,17 +1,16 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import {
-  BookOpen, GraduationCap, University, ChevronRight, Loader2,
+  ChevronRight, Loader2,
   CheckSquare, Square, Minus, ArrowLeft, Settings2, Upload, FileText,
 } from 'lucide-react'
 import { MathBackground } from '@/components/math-background'
+import { NIVEL_OPTIONS, type Nivel } from '@/lib/nivel-options'
 import { cn } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type Nivel = 'Primario' | 'Secundario' | 'Superior'
 
 type QuizMode = 'teorico' | 'practico' | 'mixto'
 
@@ -38,48 +37,29 @@ export interface CurriculumSelection {
 interface CurriculumSelectorProps {
   onStartQuiz: (selection: CurriculumSelection) => void
   onCancel?: () => void
+  /** Pre-seeds nivel/grado from the student's saved profile so returning
+   *  students skip straight to the materia step instead of re-selecting
+   *  nivel/grado every session. Omit (or pass null) to start at 'nivel' as before. */
+  initialNivel?: Nivel | null
+  initialGrado?: string | null
 }
-
-// ─── Sub-component: Nivel card ────────────────────────────────────────────────
-
-const NIVEL_OPTIONS: { value: Nivel; label: string; sub: string; Icon: React.ElementType; color: string }[] = [
-  {
-    value: 'Primario',
-    label: 'Nivel Primario',
-    sub: '1er a 7mo grado',
-    Icon: BookOpen,
-    color: 'from-sky-500 to-blue-600',
-  },
-  {
-    value: 'Secundario',
-    label: 'Nivel Secundario',
-    sub: '1er a 5to año',
-    Icon: GraduationCap,
-    color: 'from-violet-500 to-purple-600',
-  },
-  {
-    value: 'Superior',
-    label: 'Nivel Superior / Terciario',
-    sub: 'Carrera con programa propio',
-    Icon: University,
-    color: 'from-emerald-500 to-teal-600',
-  },
-]
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelectorProps) {
+export function CurriculumSelector({ onStartQuiz, onCancel, initialNivel, initialGrado }: CurriculumSelectorProps) {
   const { data: session } = useSession()
   const isDocente = session?.user?.role === 'DOCENTE'
+  const hasPreseed = Boolean(initialNivel && initialGrado)
 
   // Step machine: nivel → grado → materia → topics → params
   // For Superior the step sequence is: nivel → superior-form → topics → params
+  // When both initialNivel/initialGrado are provided, we start straight at 'materia'.
   type Step = 'nivel' | 'grado' | 'materia' | 'topics' | 'params' | 'superior-form'
-  const [step, setStep] = useState<Step>('nivel')
+  const [step, setStep] = useState<Step>(hasPreseed ? 'materia' : 'nivel')
 
-  const [nivel, setNivel] = useState<Nivel | null>(null)
+  const [nivel, setNivel] = useState<Nivel | null>(hasPreseed ? initialNivel! : null)
   const [grades, setGrades] = useState<string[]>([])
-  const [grado, setGrado] = useState<string>('')
+  const [grado, setGrado] = useState<string>(hasPreseed ? initialGrado! : '')
   const [subjects, setSubjects] = useState<string[]>([])
   const [materia, setMateria] = useState<string>('')
   const [axes, setAxes] = useState<Eje[]>([])
@@ -137,6 +117,15 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
       setLoadingData(false)
     }
   }
+
+  // Pre-seeded return visit: skip straight to materia, fetching subjects
+  // for the saved nivel/grado immediately instead of waiting for a click.
+  useEffect(() => {
+    if (hasPreseed) {
+      fetchSubjects(initialNivel!, initialGrado!)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ─── Step handlers ──────────────────────────────────────────────────────────
 
@@ -272,7 +261,13 @@ export function CurriculumSelector({ onStartQuiz, onCancel }: CurriculumSelector
 
   const goBack = () => {
     if (step === 'grado') { setStep('nivel'); setGrades([]) }
-    else if (step === 'materia') { setStep('grado'); setSubjects([]) }
+    else if (step === 'materia') {
+      setStep('grado')
+      setSubjects([])
+      // If we skipped straight to 'materia' via a pre-seeded nivel/grado, the
+      // 'grado' step never fetched its list — fetch it now so going back works.
+      if (grades.length === 0 && nivel) fetchGrades(nivel)
+    }
     else if (step === 'superior-form') { setStep('nivel') }
     else if (step === 'topics' && nivel !== 'Superior') { setStep('materia'); setAxes([]); setSelected({}) }
     else if (step === 'topics' && nivel === 'Superior') { setStep('superior-form'); setAxes([]); setSelected({}) }
