@@ -22,6 +22,8 @@ export function QuizOverlay() {
   const [statsUpdatedForQuizId, setStatsUpdatedForQuizId] = useState<string | null>(null)
 
   useEffect(() => {
+    // A teacher preview must never move streaks, averages or weak points.
+    if (currentQuiz.config?.previewOnly) return
     if (activeView === 'results' && currentQuiz.config && currentQuiz.answers.length > 0) {
       const attemptId = `${currentQuiz.config.subject}-${currentQuiz.answers.length}-${currentQuiz.startedAt}`
       if (statsUpdatedForQuizId !== attemptId) {
@@ -71,8 +73,18 @@ export function QuizOverlay() {
 
   if (activeView !== 'loading' && activeView !== 'quiz' && activeView !== 'results') return null
 
+  // Layering contract for the whole app — keep these in sync:
+  //   z-10/z-20/z-30  page content, sticky navbar, fixed page action bars
+  //   z-40            this overlay (must cover the navbar)
+  //   z-50            portaled Radix layers (Dialog, AlertDialog, Popover…)
+  //   z-[100]         toasts
+  // The overlay MUST stay below z-50: it used to be z-[100], which painted it
+  // over every portaled dialog. Those dialogs still grabbed the body scroll
+  // lock and pointer-events, so opening one from inside the quiz (the unsaved
+  // changes prompt, "Explicar con IA", "Revancha") froze the page with no
+  // visible way out.
   return (
-    <div className="fixed inset-0 z-[100] bg-background overflow-y-auto">
+    <div className="fixed inset-0 z-40 bg-background overflow-y-auto">
       {activeView === 'loading' && <LoadingScreen />}
       {activeView === 'quiz' && <QuizEngine />}
       {activeView === 'results' && <ResultsScreen />}

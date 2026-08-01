@@ -33,7 +33,7 @@ function isLikelyTextNotMath(str: string): boolean {
 
 export function LaTeXRenderer({ content, className = '' }: LaTeXRendererProps) {
   const renderedContent = useMemo(() => {
-    const parts: (string | { type: 'latex'; content: string })[] = []
+    const parts: (string | { type: 'latex'; content: string; display: boolean })[] = []
     let lastIndex = 0
 
     // Match both $$...$$ (display) and $...$ (inline)
@@ -65,7 +65,7 @@ export function LaTeXRenderer({ content, className = '' }: LaTeXRendererProps) {
           displayMode: isDisplay,
           strict: false
         })
-        parts.push({ type: 'latex', content: rendered })
+        parts.push({ type: 'latex', content: rendered, display: isDisplay })
       } catch {
         parts.push(latexContent)
       }
@@ -87,10 +87,19 @@ export function LaTeXRenderer({ content, className = '' }: LaTeXRendererProps) {
         if (typeof part === 'string') {
           return <span key={index} className="break-words">{part}</span>
         }
+        // Inline math keeps the horizontal scroll (a long formula can't wrap)
+        // but hides the scrollbar chrome: on Windows the classic scrollbar has
+        // arrow buttons at both ends, and sub-pixel rounding was enough to make
+        // it appear under short fragments like $25$ or $7^2$. Display math is
+        // wide on purpose, so there the scrollbar stays visible.
         return (
           <span
             key={index}
-            className="inline-block max-w-full overflow-x-auto align-middle break-words"
+            className={
+              part.display
+                ? 'inline-block max-w-full overflow-x-auto align-middle break-words'
+                : 'inline-block max-w-full overflow-x-auto align-middle break-words [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+            }
             dangerouslySetInnerHTML={{ __html: part.content }}
           />
         )

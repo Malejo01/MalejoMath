@@ -32,10 +32,12 @@ interface AnswerInputProps {
   onChange: (selection: AnswerSelection) => void
   isCorrect?: boolean | null
   disabled?: boolean
-  /** Teacher preview inline editor (multiple_choice only, see teacher-quiz-generated.tsx). */
+  /** Teacher preview inline editor (multiple_choice only, see quiz-engine.tsx). */
   editing?: boolean
   editedOptions?: string[]
+  editedCorrectAnswer?: number
   onEditOption?: (index: number, value: string) => void
+  onEditCorrectAnswer?: (index: number) => void
 }
 
 export function AnswerInput({
@@ -47,7 +49,9 @@ export function AnswerInput({
   disabled,
   editing,
   editedOptions,
+  editedCorrectAnswer,
   onEditOption,
+  onEditCorrectAnswer,
 }: AnswerInputProps) {
   if (question.type === 'multiple_choice' && selection.type === 'multiple_choice') {
     return (
@@ -58,7 +62,9 @@ export function AnswerInput({
         disabled={disabled}
         editing={editing}
         editedOptions={editedOptions}
+        editedCorrectAnswer={editedCorrectAnswer}
         onEditOption={onEditOption}
+        onEditCorrectAnswer={onEditCorrectAnswer}
         onSelect={(value) => onChange({ type: 'multiple_choice', value })}
       />
     )

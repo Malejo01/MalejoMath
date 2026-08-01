@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useAppStore } from '@/lib/store'
 import { exportQuizToMoodleGift } from '@/lib/moodle-export'
@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { normalizeQuestions } from '@/lib/normalize-questions'
 import type { Question } from '@/lib/types'
 import type { CurriculumSelection } from './curriculum-selector'
 import { useToast } from '@/hooks/use-toast'
@@ -29,12 +30,13 @@ interface TeacherQuizGeneratedProps {
 
 export function TeacherQuizGenerated({ questions: initialQuestions, selection, onBack, onGoToSavedQuizzes }: TeacherQuizGeneratedProps) {
   const { data: session } = useSession()
-  const { startQuiz } = useAppStore()
+  const startQuizPreview = useAppStore((state) => state.startQuizPreview)
+  const activeView = useAppStore((state) => state.activeView)
   const { toast } = useToast()
 
   const [questions, setQuestions] = useState<Question[]>(() => {
     const seen = new Set<string>()
-    return initialQuestions.map((q, idx) => {
+    return normalizeQuestions(initialQuestions).map((q, idx) => {
       let uniqueId = q.id || `q-${idx}`
       if (seen.has(uniqueId)) {
         uniqueId = `${uniqueId}-${idx}`
@@ -54,6 +56,24 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
   const [editOptions, setEditOptions] = useState<string[]>([])
   const [editCorrectAnswer, setEditCorrectAnswer] = useState<number>(0)
   const [editExplanation, setEditExplanation] = useState('')
+
+  // The preview edits the copy that lives in the store, not this local state.
+  // Without adopting it back when the preview closes, every change the teacher
+  // made in there was silently thrown away — including on save.
+  const wasPreviewingRef = useRef(false)
+  useEffect(() => {
+    if (activeView === 'quiz') {
+      wasPreviewingRef.current = true
+      return
+    }
+    if (!wasPreviewingRef.current) return
+    wasPreviewingRef.current = false
+
+    const { config, questions: previewed } = useAppStore.getState().currentQuiz
+    if (config?.previewOnly && previewed.length > 0) {
+      setQuestions(previewed)
+    }
+  }, [activeView])
 
   const removeQuestion = useCallback((id: string) => {
     setQuestions((prev) => prev.filter((q) => q.id !== id))
@@ -197,14 +217,15 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
 
   // ── Send to quiz engine (preview mode) ────────────────────────────────────
   const handlePreviewAsAlumno = () => {
-    startQuiz(
+    startQuizPreview(
       {
         subject: selection.materia,
         subjectName: selection.materia,
+        nivel: selection.nivel,
+        grado: selection.grado,
         topics: selection.selectedTopics.map((t) => ({ id: t.id, name: t.name })),
         mode: selection.mode,
         questionCount: questions.length,
-        previewOnly: true,
       },
       questions,
     )

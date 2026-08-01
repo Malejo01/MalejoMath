@@ -13,7 +13,9 @@ interface MultipleChoiceInputProps {
   /** Teacher preview inline editor — when set, options render as text inputs instead. */
   editing?: boolean
   editedOptions?: string[]
+  editedCorrectAnswer?: number
   onEditOption?: (index: number, value: string) => void
+  onEditCorrectAnswer?: (index: number) => void
   disabled?: boolean
 }
 
@@ -24,7 +26,9 @@ export function MultipleChoiceInput({
   onSelect,
   editing = false,
   editedOptions,
+  editedCorrectAnswer,
   onEditOption,
+  onEditCorrectAnswer,
   disabled = false,
 }: MultipleChoiceInputProps) {
   return (
@@ -35,50 +39,85 @@ export function MultipleChoiceInput({
         const showCorrect = submitted && isCorrectAnswer
         const showIncorrect = submitted && isSelected && !isCorrectAnswer
         const optionValue = editing ? (editedOptions?.[index] ?? option) : option
+        const isDraftCorrect = editing && (editedCorrectAnswer ?? question.correctAnswer) === index
+        const letter = String.fromCharCode(65 + index)
+
+        const containerClass = cn(
+          'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200',
+          'touch-manipulation bg-card/80 backdrop-blur-sm',
+          showIncorrect && 'animate-shake',
+          editing && (isDraftCorrect
+            ? 'border-[var(--analysis)] bg-[var(--analysis-light)]'
+            : 'border-border'),
+          !editing && disabled && 'border-border opacity-95 cursor-default',
+          !editing && !disabled && !submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md active:scale-[0.98]',
+          !editing && !disabled && !submitted && isSelected && 'border-[var(--algebra)] bg-[var(--algebra-light)] shadow-lg shadow-[var(--algebra)]/20',
+          !editing && showCorrect && 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg shadow-[var(--analysis)]/20 border-4',
+          !editing && showIncorrect && 'border-destructive bg-destructive/10 shadow-lg shadow-destructive/20 border-4',
+          !editing && !disabled && submitted && !showCorrect && !showIncorrect && 'border-border opacity-40'
+        )
+
+        const badgeClass = cn(
+          'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-lg font-bold transition-all border-2',
+          !editing && !submitted && !isSelected && 'bg-muted text-muted-foreground border-transparent',
+          !editing && !submitted && isSelected && 'bg-[var(--algebra)] text-white border-[var(--algebra)]',
+          !editing && showCorrect && 'bg-[var(--analysis)] text-white border-[var(--analysis)]',
+          !editing && showIncorrect && 'bg-destructive text-white border-destructive',
+          editing && (isDraftCorrect
+            ? 'bg-[var(--analysis)] text-white border-[var(--analysis)]'
+            : 'bg-muted text-muted-foreground border-transparent hover:border-[var(--analysis)]/50')
+        )
+
+        const badgeContent = submitted && !editing
+          ? (showCorrect ? <Check className="w-6 h-6" strokeWidth={3} />
+            : showIncorrect ? <X className="w-6 h-6" strokeWidth={3} />
+            : letter)
+          : isDraftCorrect
+            ? <Check className="w-6 h-6" strokeWidth={3} />
+            : letter
+
+        // While editing, the row must not be a <button> — it holds a text input
+        // and a second button for picking the correct option.
+        if (editing) {
+          return (
+            <div key={index} className={containerClass}>
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => onEditCorrectAnswer?.(index)}
+                  className={badgeClass}
+                  aria-pressed={isDraftCorrect}
+                  aria-label={`Marcar la opción ${letter} como correcta`}
+                  title="Marcar como respuesta correcta"
+                >
+                  {badgeContent}
+                </button>
+                <span className="flex-1 min-w-0 pt-2.5">
+                  <input
+                    value={optionValue}
+                    onChange={(event) => onEditOption?.(index, event.target.value)}
+                    className="w-full border rounded-md px-2 py-1 bg-background text-sm"
+                    aria-label={`Texto de la opción ${letter}`}
+                  />
+                </span>
+              </div>
+            </div>
+          )
+        }
 
         return (
           <button
             key={index}
             onClick={() => onSelect(index)}
-            disabled={submitted || disabled || editing}
-            className={cn(
-              'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200',
-              'touch-manipulation bg-card/80 backdrop-blur-sm',
-              showIncorrect && 'animate-shake',
-              disabled && !editing && 'border-border opacity-95 cursor-default',
-              !disabled && !submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md active:scale-[0.98]',
-              !disabled && !submitted && isSelected && 'border-[var(--algebra)] bg-[var(--algebra-light)] shadow-lg shadow-[var(--algebra)]/20',
-              showCorrect && 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg shadow-[var(--analysis)]/20 border-4',
-              showIncorrect && 'border-destructive bg-destructive/10 shadow-lg shadow-destructive/20 border-4',
-              !disabled && submitted && !showCorrect && !showIncorrect && 'border-border opacity-40'
-            )}
+            disabled={submitted || disabled}
+            className={containerClass}
           >
             <div className="flex items-start gap-3">
-              <div className={cn(
-                'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-lg font-bold transition-all border-2',
-                !submitted && !isSelected && 'bg-muted text-muted-foreground border-transparent',
-                !submitted && isSelected && 'bg-[var(--algebra)] text-white border-[var(--algebra)]',
-                showCorrect && 'bg-[var(--analysis)] text-white border-[var(--analysis)]',
-                showIncorrect && 'bg-destructive text-white border-destructive'
-              )}>
-                {submitted ? (
-                  showCorrect ? <Check className="w-6 h-6" strokeWidth={3} /> :
-                  showIncorrect ? <X className="w-6 h-6" strokeWidth={3} /> :
-                  String.fromCharCode(65 + index)
-                ) : (
-                  String.fromCharCode(65 + index)
-                )}
-              </div>
-              <span className="flex-1 min-w-0 pt-2.5 font-semibold text-base break-words overflow-x-auto max-w-full">
-                {!editing ? (
-                  <LaTeXRenderer content={optionValue} className="text-foreground" />
-                ) : (
-                  <input
-                    value={optionValue}
-                    onChange={(event) => onEditOption?.(index, event.target.value)}
-                    className="w-full border rounded-md px-2 py-1 bg-background text-sm"
-                  />
-                )}
+              <div className={badgeClass}>{badgeContent}</div>
+              {/* No overflow-x-auto here: option text wraps, and LaTeXRenderer
+                  already owns the horizontal overflow of its own fragments. */}
+              <span className="flex-1 min-w-0 pt-2.5 font-semibold text-base break-words max-w-full">
+                <LaTeXRenderer content={optionValue} className="text-foreground" />
               </span>
             </div>
           </button>

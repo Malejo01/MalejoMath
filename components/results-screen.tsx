@@ -49,6 +49,8 @@ export function ResultsScreen() {
     // Guests have no NextAuth session but do carry a signed aula cookie, so a
     // quiz run inside an aula still saves — the API validates the identity.
     const isAulaQuiz = Boolean(config?.classroomId || config?.assignmentId)
+    // A teacher trying out their own quiz is not an attempt worth recording.
+    if (config?.previewOnly) return
     if ((!isSignedIn && !isAulaQuiz) || hasSavedRef.current || !config || answers.length === 0) return
 
     hasSavedRef.current = true

@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { normalizeQuestions } from './normalize-questions'
 import type {
   UserProgress,
   QuizConfig,
@@ -139,7 +140,7 @@ export const useAppStore = create<AppState>()(
       startQuiz: (config, questions) => set({
         currentQuiz: {
           config,
-          questions,
+          questions: normalizeQuestions(questions),
           currentIndex: 0,
           answers: [],
           startedAt: new Date().toISOString()
@@ -150,7 +151,7 @@ export const useAppStore = create<AppState>()(
       startQuizPreview: (config, questions) => set({
         currentQuiz: {
           config: { ...config, previewOnly: true },
-          questions,
+          questions: normalizeQuestions(questions),
           currentIndex: 0,
           answers: [],
           startedAt: null

@@ -126,8 +126,10 @@ export function Navbar() {
     }
   }
 
+  // Navbar sits at z-30: above page content, below the quiz overlay (z-40) and
+  // below every portaled Radix layer (z-50). See the note in quiz-overlay.tsx.
   return (
-    <header className="sticky top-0 z-50 w-full bg-card/80 backdrop-blur-xl border-b border-border/50 shadow-sm transition-all duration-300">
+    <header className="sticky top-0 z-30 w-full bg-card/80 backdrop-blur-xl border-b border-border/50 shadow-sm transition-all duration-300">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center gap-3 group cursor-pointer">

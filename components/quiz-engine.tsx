@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { X, ChevronRight, ChevronLeft, Check, AlertCircle, Lightbulb, Loader2, Sparkles, Eye, Zap } from 'lucide-react'
+import { X, ChevronRight, ChevronLeft, Check, Loader2, Pencil, Sparkles, Eye, Zap } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { LaTeXRenderer } from './latex-renderer'
 import { MathBackground } from './math-background'
@@ -49,6 +49,8 @@ export function QuizEngine() {
   const [isEditingQuestion, setIsEditingQuestion] = useState(false)
   const [questionDraft, setQuestionDraft] = useState('')
   const [optionsDraft, setOptionsDraft] = useState<string[]>([])
+  const [correctAnswerDraft, setCorrectAnswerDraft] = useState(0)
+  const [explanationDraft, setExplanationDraft] = useState('')
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingAction, setPendingAction] = useState<'exit' | 'next' | 'prev' | 'cancel-edit' | null>(null)
 
@@ -57,6 +59,8 @@ export function QuizEngine() {
     if (!currentQuestion) return
     setAnswerState({ selection: emptySelectionFor(currentQuestion), submitted: false, isCorrect: null })
     setShortAnswerFeedback(null)
+    setDetailedExplanation(null)
+    setShowExplanationModal(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex])
 
@@ -90,35 +94,56 @@ export function QuizEngine() {
     }
   }, [isFirstQuestion, isLastQuestion, nextQuestion, previousQuestion, setActiveView])
 
+  /** Editing invalidates whatever the teacher had already answered here. */
+  const resetAnswerState = useCallback(() => {
+    if (!currentQuestion) return
+    setAnswerState({ selection: emptySelectionFor(currentQuestion), submitted: false, isCorrect: null })
+    setShortAnswerFeedback(null)
+    setDetailedExplanation(null)
+  }, [currentQuestion])
+
   const handleStartEditQuestion = useCallback(() => {
     if (!isPreviewMode || !currentQuestion || currentQuestion.type !== 'multiple_choice') return
     setQuestionDraft(currentQuestion.question)
     setOptionsDraft([...currentQuestion.options])
+    setCorrectAnswerDraft(currentQuestion.correctAnswer)
+    setExplanationDraft(currentQuestion.explanation ?? '')
+    resetAnswerState()
     setIsEditingQuestion(true)
-  }, [isPreviewMode, currentQuestion])
+  }, [isPreviewMode, currentQuestion, resetAnswerState])
 
   const handleSaveEditedQuestion = useCallback(() => {
     if (!isPreviewMode || !currentQuestion || currentQuestion.type !== 'multiple_choice') return
 
     const nextQuestions = questions.map((question, index) => (
       index === currentIndex && question.type === 'multiple_choice'
-        ? { ...question, question: questionDraft, options: [...optionsDraft] }
+        ? {
+            ...question,
+            question: questionDraft,
+            options: [...optionsDraft],
+            correctAnswer: correctAnswerDraft,
+            explanation: explanationDraft,
+          }
         : question
     ))
 
     updateQuestions(nextQuestions)
+    resetAnswerState()
     setIsEditingQuestion(false)
-  }, [isPreviewMode, currentQuestion, questions, currentIndex, questionDraft, optionsDraft, updateQuestions])
+  }, [
+    isPreviewMode, currentQuestion, questions, currentIndex, questionDraft,
+    optionsDraft, correctAnswerDraft, explanationDraft, updateQuestions, resetAnswerState,
+  ])
 
   const handleCancelEditQuestion = useCallback(() => {
     requestOrRunAction('cancel-edit', () => setIsEditingQuestion(false))
   }, [requestOrRunAction])
 
   const handleAnswerChange = useCallback((selection: AnswerSelection) => {
-    if (isPreviewMode) return
+    if (isEditingQuestion) return
     if (answerState.submitted) return
     setAnswerState(prev => ({ ...prev, selection }))
-  }, [answerState.submitted, isPreviewMode])
+  }, [answerState.submitted, isEditingQuestion])
 
   /** Builds the typed Answer that gets persisted/recapped, given the current question + selection. */
   const buildAnswer = useCallback((question: NonNullable<typeof currentQuestion>, selection: AnswerSelection, isCorrect: boolean): Answer => {
@@ -146,7 +171,7 @@ export function QuizEngine() {
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (isPreviewMode) return
+    if (isEditingQuestion) return
     if (!currentQuestion || !answerState.selection) return
     const selection = answerState.selection
 
@@ -203,7 +228,7 @@ export function QuizEngine() {
         setIsGradingShortAnswer(false)
       }
     }
-  }, [answerState.selection, currentQuestion, answerQuestion, isPreviewMode, buildAnswer, config])
+  }, [answerState.selection, currentQuestion, answerQuestion, isEditingQuestion, buildAnswer, config])
 
   const handleNext = useCallback(() => {
     if (isPreviewMode) {
@@ -289,8 +314,10 @@ export function QuizEngine() {
       setDetailedExplanation(data.explanation)
       setShowExplanationModal(true)
 
-      // Auto-save tip to student's tips chest / misconceptions
-      if (data.tipText && config?.subjectName && currentQuestion.topicName) {
+      // Auto-save tip to student's tips chest / misconceptions.
+      // Never from the teacher preview — it would file the tip under the
+      // teacher's own account as if they had got the question wrong.
+      if (!isPreviewMode && data.tipText && config?.subjectName && currentQuestion.topicName) {
         fetch('/api/user/tips', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -309,7 +336,7 @@ export function QuizEngine() {
     } finally {
       setIsLoadingExplanation(false)
     }
-  }, [currentQuestion, currentAnswer, config, detailedExplanation])
+  }, [currentQuestion, currentAnswer, config, detailedExplanation, isPreviewMode])
 
   const handleExit = useCallback(() => {
     if (isPreviewMode) {
@@ -399,16 +426,33 @@ export function QuizEngine() {
                 </div>
               )}
 
-              {!isPreviewMode || !isEditingQuestion ? (
+              {!isEditingQuestion ? (
                 <h2 className="text-xl font-bold text-foreground leading-relaxed">
                   <LaTeXRenderer content={currentQuestion.question} />
                 </h2>
               ) : (
-                <textarea
-                  className="w-full min-h-28 border rounded-lg p-3 bg-background text-sm"
-                  value={questionDraft}
-                  onChange={(event) => setQuestionDraft(event.target.value)}
-                />
+                <div className="space-y-3">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold text-muted-foreground">Pregunta / Enunciado</span>
+                    <textarea
+                      className="w-full min-h-28 border rounded-lg p-3 bg-background text-sm"
+                      value={questionDraft}
+                      onChange={(event) => setQuestionDraft(event.target.value)}
+                    />
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Editá el texto de cada opción abajo y tocá su letra para marcar cuál es la correcta.
+                  </p>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold text-muted-foreground">Explicación</span>
+                    <textarea
+                      className="w-full min-h-20 border rounded-lg p-3 bg-background text-sm"
+                      value={explanationDraft}
+                      onChange={(event) => setExplanationDraft(event.target.value)}
+                      placeholder="Qué se le muestra al alumno después de responder."
+                    />
+                  </label>
+                </div>
               )}
             </div>
           </Card>
@@ -421,9 +465,10 @@ export function QuizEngine() {
               submitted={answerState.submitted}
               onChange={handleAnswerChange}
               isCorrect={answerState.submitted ? answerState.isCorrect : undefined}
-              disabled={isPreviewMode && !isEditingQuestion}
-              editing={isPreviewMode && isEditingQuestion && currentQuestion.type === 'multiple_choice'}
+              editing={isEditingQuestion && currentQuestion.type === 'multiple_choice'}
               editedOptions={optionsDraft}
+              editedCorrectAnswer={correctAnswerDraft}
+              onEditCorrectAnswer={setCorrectAnswerDraft}
               onEditOption={(index, value) => {
                 setOptionsDraft((prev) => {
                   const next = [...prev]
@@ -442,7 +487,7 @@ export function QuizEngine() {
           )}
 
           {/* Feedback after answer - correct */}
-          {!isPreviewMode && answerState.submitted && answerState.isCorrect && (
+          {answerState.submitted && answerState.isCorrect && (
             <Card className="p-5 border-2 border-[var(--analysis)] bg-[var(--analysis-light)] animate-in fade-in-50 slide-in-from-bottom-4">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[var(--analysis)] flex items-center justify-center shrink-0">
@@ -459,7 +504,7 @@ export function QuizEngine() {
           )}
 
           {/* Feedback after answer - incorrect */}
-          {!isPreviewMode && answerState.submitted && !answerState.isCorrect && (
+          {answerState.submitted && !answerState.isCorrect && (
             <Card className="p-4 sm:p-5 border-2 border-destructive/30 bg-destructive/5 animate-in fade-in-50 slide-in-from-bottom-4 space-y-4 max-w-full overflow-hidden min-w-0">
               <div className="flex items-start gap-3 min-w-0 max-w-full overflow-hidden">
                 <div className="w-10 h-10 rounded-xl bg-destructive flex items-center justify-center shrink-0">
@@ -519,26 +564,58 @@ export function QuizEngine() {
 
       {/* Fixed Action Button */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/95 backdrop-blur-xl border-t-2 border-border z-20">
-        <div className="flex gap-2.5">
+        <div className={cn(isPreviewMode ? 'flex flex-col gap-2.5' : 'flex gap-2.5')}>
           {isPreviewMode ? (
             <>
-              <Button
-                variant="outline"
-                onClick={handlePrevious}
-                disabled={isFirstQuestion}
-                className="flex-1 h-14 rounded-2xl border-2 font-bold gap-2"
-              >
-                <ChevronLeft className="w-5 h-5" />
-                Anterior
-              </Button>
-              <Button
-                onClick={handleNext}
-                disabled={isLastQuestion}
-                className="flex-1 h-14 text-lg font-bold gap-2 rounded-2xl"
-              >
-                Siguiente
-                <ChevronRight className="w-5 h-5" />
-              </Button>
+              {/* The teacher answers for real here, but can also just skim:
+                  "Verificar" only shows while the question is unanswered, and
+                  Anterior/Siguiente stay available either way. */}
+              {!answerState.submitted && (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!isAnswerReady || isGradingShortAnswer || isEditingQuestion}
+                  className={cn(
+                    'h-14 w-full text-base font-bold rounded-2xl shadow-lg transition-all',
+                    'bg-gradient-to-r from-[var(--algebra)] to-[var(--algebra)]/80',
+                    'hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]',
+                    'disabled:opacity-50 disabled:shadow-none disabled:scale-100'
+                  )}
+                >
+                  {isGradingShortAnswer ? (
+                    <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Corrigiendo...</span>
+                  ) : (
+                    'Verificar'
+                  )}
+                </Button>
+              )}
+              <div className="flex gap-2.5">
+                <Button
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={isFirstQuestion}
+                  className="flex-1 h-14 rounded-2xl border-2 font-bold gap-2"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  Anterior
+                </Button>
+                {isLastQuestion ? (
+                  <Button
+                    onClick={handleExit}
+                    className="flex-1 h-14 text-base font-bold gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+                  >
+                    <Pencil className="w-5 h-5 shrink-0" />
+                    <span className="truncate">Volver al editor</span>
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleNext}
+                    className="flex-1 h-14 text-lg font-bold gap-2 rounded-2xl"
+                  >
+                    Siguiente
+                    <ChevronRight className="w-5 h-5" />
+                  </Button>
+                )}
+              </div>
             </>
           ) : (
             <>

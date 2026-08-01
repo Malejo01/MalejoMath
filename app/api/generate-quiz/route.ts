@@ -5,6 +5,7 @@ import { buildEducationSystemPrompt } from '@/lib/education-context'
 import { sql } from '@/lib/db'
 import { getViewer, type Viewer } from '@/lib/auth-session'
 import { GUEST_DAILY_GENERATION_LIMIT } from '@/lib/classrooms'
+import { normalizeQuestionText, numericSignature } from '@/lib/question-dedup'
 
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -99,7 +100,18 @@ function buildTypeInstructions(questionTypes: QuestionType[]): string {
 TIPOS DE PREGUNTA A GENERAR (usa el campo "type" con EXACTAMENTE uno de estos valores: ${typesList}):
 
 ${blocks}
-${questionTypes.length > 1 ? '\nDistribuí las preguntas de forma pareja entre los tipos solicitados.' : ''}`
+${questionTypes.length > 1
+  ? `
+Distribuí las preguntas de forma pareja entre los tipos solicitados.
+
+MUY IMPORTANTE — NO REPITAS EL MISMO EJERCICIO EN DOS FORMATOS:
+Dos preguntas son la MISMA aunque cambien de tipo o de redacción si se resuelven
+con la misma cuenta o evalúan el mismo caso puntual. Por ejemplo, "¿Cuál es el
+resultado de $7^2$?" (opción múltiple) y "Si calculamos el cuadrado de 7, ¿qué
+número obtenemos?" (respuesta corta) son la misma pregunta disfrazada: está mal.
+Cada pregunta tiene que usar números o casos DISTINTOS de las demás, no solo
+otro formato.`
+  : ''}`
 }
 
 function shuffleInPlace<T>(arr: T[]): T[] {
@@ -160,16 +172,6 @@ const repairQuizJson: RepairTextFunction = async ({ text }) => {
 
   console.log('[repairQuizJson] Repairs applied, length:', candidate.length)
   return candidate
-}
-
-function normalizeQuestionText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\$+/g, '')
-    .replace(/\\[a-zA-Z]+/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 function normalizeLogicalNotation(text: string): string {
@@ -668,11 +670,43 @@ export async function POST(req: Request) {
       ? 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.'
       : 'MODO MIXTO: Equilibrar preguntas teoricas y practicas.'
 
-  const previousNote = previousQuestionTexts.length > 0
-    ? `NO repitas ni reformules estas preguntas previas:\n${previousQuestionTexts.map((question: string, index: number) => `${index + 1}. ${question}`).join('\n')}`
-    : previousQuestionIds?.length > 0
-      ? 'Genera preguntas diferentes a las anteriores.'
-    : ''
+  // Grows as the run collects questions. Rebuilding it before every batch is
+  // what stops a retry — or the other half of a "mixto" quiz — from producing
+  // the same exercise again: until now the note was frozen at the questions the
+  // student had seen in *previous* quizzes, so each batch was blind to what the
+  // rest of this very quiz had already asked.
+  const askedTexts: string[] = [...previousQuestionTexts]
+  const buildPreviousNote = () => {
+    if (askedTexts.length === 0) {
+      return previousQuestionIds?.length > 0 ? 'Genera preguntas diferentes a las anteriores.' : ''
+    }
+    return `NO repitas ni reformules ninguna de estas preguntas (ya fueron usadas):
+${askedTexts.map((question: string, index: number) => `${index + 1}. ${question}`).join('\n')}
+
+Una pregunta cuenta como repetida aunque cambies el tipo, el formato o la redacción,
+si se resuelve con la misma cuenta o evalúa el mismo caso puntual. Usá números o
+situaciones diferentes.`
+  }
+
+  /** Signatures seen in THIS run — see numericSignature for why it is not global. */
+  const runSignatures = new Set<string>()
+
+  /** Returns true when the question is a duplicate and should be dropped. */
+  const isDuplicate = (question: { question: string; topic?: string; topicName?: string }): boolean => {
+    const fingerprint = normalizeQuestionText(question.question)
+    if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) return true
+
+    const signature = numericSignature(question)
+    if (signature && runSignatures.has(signature)) {
+      console.log('[generate-quiz] Dropped a re-dressed duplicate:', question.question)
+      return true
+    }
+
+    previousQuestionFingerprints.add(fingerprint)
+    if (signature) runSignatures.add(signature)
+    askedTexts.push(question.question)
+    return false
+  }
 
   const pedagogyNote = typeof pedagogyContext === 'string' && pedagogyContext.trim().length > 0
     ? `\nPREFERENCIAS PEDAGOGICAS DEL DOCENTE:\n${pedagogyContext}`
@@ -695,7 +729,7 @@ export async function POST(req: Request) {
             modeDescription: 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.',
             topicsText,
             questionCount: teoricoCount,
-            previousNote,
+            previousNote: buildPreviousNote(),
             pedagogyNote,
             specialistRole,
             difficulty,
@@ -705,9 +739,7 @@ export async function POST(req: Request) {
           })
 
           for (const question of teoricoBatch) {
-            const fingerprint = normalizeQuestionText(question.question)
-            if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) continue
-            previousQuestionFingerprints.add(fingerprint)
+            if (isDuplicate(question)) continue
             teoricoCollected.push(question)
             if (teoricoCollected.length === teoricoCount) break
           }
@@ -720,7 +752,9 @@ export async function POST(req: Request) {
             modeDescription: 'MODO PRÁCTICO: Ejercicios de cálculo y resolución de problemas numéricos.',
             topicsText,
             questionCount: practicoCount,
-            previousNote,
+            // Rebuilt here on purpose: by now it also lists the teórico half,
+            // so the práctico batch can no longer restate the same exercise.
+            previousNote: buildPreviousNote(),
             pedagogyNote,
             specialistRole,
             difficulty,
@@ -730,9 +764,7 @@ export async function POST(req: Request) {
           })
 
           for (const question of practicoBatch) {
-            const fingerprint = normalizeQuestionText(question.question)
-            if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) continue
-            previousQuestionFingerprints.add(fingerprint)
+            if (isDuplicate(question)) continue
             practicoCollected.push(question)
             if (practicoCollected.length === practicoCount) break
           }
@@ -760,7 +792,8 @@ export async function POST(req: Request) {
         modeDescription,
         topicsText,
         questionCount,
-        previousNote,
+        // Rebuilt on every attempt so retry #2 knows what attempt #1 produced.
+        previousNote: buildPreviousNote(),
         pedagogyNote,
         specialistRole,
         difficulty,
@@ -772,13 +805,8 @@ export async function POST(req: Request) {
       console.log('[generateObject] Success! Questions:', generatedQuestions.length)
 
       for (const question of generatedQuestions) {
-        const fingerprint = normalizeQuestionText(question.question)
+        if (isDuplicate(question)) continue
 
-        if (!fingerprint || previousQuestionFingerprints.has(fingerprint)) {
-          continue
-        }
-
-        previousQuestionFingerprints.add(fingerprint)
         collectedQuestions.push(question)
 
         if (collectedQuestions.length === questionCount) {
