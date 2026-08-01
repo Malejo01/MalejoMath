@@ -73,6 +73,10 @@ export interface DbTeacherProgram {
   source_mime_type: string | null
   source_file_size_bytes: number | null
   source_expires_at: Date | null
+  nivel: 'Primario' | 'Secundario' | 'Superior' | null
+  grado: string | null
+  jurisdiccion: string | null
+  created_from: 'upload' | 'curriculum' | 'manual'
   status: 'active' | 'archived'
   created_at: Date
   updated_at: Date

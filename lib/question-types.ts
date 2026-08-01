@@ -1,0 +1,44 @@
+import { CheckSquare, Hash, PenLine, ToggleLeft, type LucideIcon } from 'lucide-react'
+import type { QuestionType } from '@/lib/types'
+
+export interface QuestionTypeOption {
+  value: QuestionType
+  label: string
+  description: string
+  Icon: LucideIcon
+}
+
+/**
+ * The one place that lists the question types a quiz can mix. generate-quiz
+ * already supports all four end to end (schema, prompt, grading, Moodle
+ * export) — this is what was missing: nothing in the UI let a teacher or
+ * student actually ask for anything besides multiple_choice.
+ */
+export const QUESTION_TYPE_OPTIONS: QuestionTypeOption[] = [
+  {
+    value: 'multiple_choice',
+    label: 'Opción múltiple',
+    description: '4 opciones, una correcta.',
+    Icon: CheckSquare,
+  },
+  {
+    value: 'true_false',
+    label: 'Verdadero o falso',
+    description: 'Afirmaciones para validar.',
+    Icon: ToggleLeft,
+  },
+  {
+    value: 'short_answer',
+    label: 'Respuesta corta',
+    description: 'El alumno escribe la respuesta; la IA la corrige.',
+    Icon: PenLine,
+  },
+  {
+    value: 'numeric',
+    label: 'Respuesta numérica',
+    description: 'El alumno ingresa un número.',
+    Icon: Hash,
+  },
+]
+
+export const DEFAULT_QUESTION_TYPES: QuestionType[] = ['multiple_choice']

@@ -8,7 +8,10 @@ import {
 } from 'lucide-react'
 import { MathBackground } from '@/components/math-background'
 import { NIVEL_OPTIONS, type Nivel } from '@/lib/nivel-options'
+import { QuestionTypeSelector } from '@/components/question-type-selector'
+import { DEFAULT_QUESTION_TYPES } from '@/lib/question-types'
 import { cn } from '@/lib/utils'
+import type { QuestionType } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +35,7 @@ export interface CurriculumSelection {
   mode: QuizMode
   questionCount: number
   difficulty: 'basico' | 'intermedio' | 'avanzado'
+  questionTypes: QuestionType[]
 }
 
 interface CurriculumSelectorProps {
@@ -79,6 +83,7 @@ export function CurriculumSelector({ onStartQuiz, onCancel, initialNivel, initia
   const [mode, setMode] = useState<QuizMode>('mixto')
   const [questionCount, setQuestionCount] = useState(20)
   const [difficulty, setDifficulty] = useState<'basico' | 'intermedio' | 'avanzado'>('intermedio')
+  const [questionTypes, setQuestionTypes] = useState<QuestionType[]>(DEFAULT_QUESTION_TYPES)
 
   // ─── Data fetching ──────────────────────────────────────────────────────────
 
@@ -254,6 +259,7 @@ export function CurriculumSelector({ onStartQuiz, onCancel, initialNivel, initia
       mode,
       questionCount,
       difficulty,
+      questionTypes,
     })
   }
 
@@ -653,6 +659,12 @@ export function CurriculumSelector({ onStartQuiz, onCancel, initialNivel, initia
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Tipos de pregunta */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-3">Tipos de pregunta</label>
+                <QuestionTypeSelector value={questionTypes} onChange={setQuestionTypes} />
               </div>
             </div>
 

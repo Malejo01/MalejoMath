@@ -9,7 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { QuestionTypeSelector } from '@/components/question-type-selector'
 import { cn } from '@/lib/utils'
+import type { QuestionType } from '@/lib/types'
 
 interface QuizModeDialogProps {
   open: boolean
@@ -27,6 +29,14 @@ interface QuizModeDialogProps {
   isQuestionCountValid?: boolean
   minQuestionCount?: number
   maxQuestionCount?: number
+  /**
+   * Off by default: the quick "revancha"/weak-points retry dialogs reuse this
+   * component but keep asking for exactly what they always asked (mode only).
+   * Only the full quiz-creation flows (subject-content) turn this on.
+   */
+  showQuestionTypeSelector?: boolean
+  questionTypes?: QuestionType[]
+  onQuestionTypesChange?: (next: QuestionType[]) => void
 }
 
 const modeCards = [
@@ -75,6 +85,9 @@ export function QuizModeDialog({
   isQuestionCountValid = true,
   minQuestionCount = 5,
   maxQuestionCount = 50,
+  showQuestionTypeSelector = false,
+  questionTypes = ['multiple_choice'],
+  onQuestionTypesChange,
 }: QuizModeDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,6 +158,17 @@ export function QuizModeDialog({
                 : `Ingresa un numero entero entre ${minQuestionCount} y ${maxQuestionCount}.`}
             </p>
           </div>
+          )}
+
+          {showQuestionTypeSelector && (
+            <div className="rounded-2xl border-2 border-border/70 bg-muted/20 p-4 space-y-2">
+              <p className="text-sm font-semibold text-foreground">Tipos de pregunta</p>
+              <QuestionTypeSelector
+                value={questionTypes}
+                onChange={(next) => onQuestionTypesChange?.(next)}
+                disabled={isLoading}
+              />
+            </div>
           )}
 
           {modeCards.map(({ mode, title: modeTitle, description: modeDescription, icon: Icon, accent, border, background }) => (

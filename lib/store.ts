@@ -22,7 +22,7 @@ interface AppState {
   teacherPrograms: TeacherProgram[]
   teacherQuizzes: TeacherQuiz[]
   teacherProgramFilters: TeacherProgramFilters
-  teacherSection: 'materias' | 'crear' | 'cuestionarios'
+  teacherSection: 'materias' | 'crear' | 'cuestionarios' | 'aulas'
   
   // Current Quiz State
   currentQuiz: {
@@ -68,7 +68,7 @@ interface AppState {
   updateTeacherQuiz: (quizId: number, updates: Partial<TeacherQuiz>) => void
   removeTeacherQuiz: (quizId: number) => void
   setTeacherProgramFilters: (filters: Partial<TeacherProgramFilters>) => void
-  setTeacherSection: (section: 'materias' | 'crear' | 'cuestionarios') => void
+  setTeacherSection: (section: 'materias' | 'crear' | 'cuestionarios' | 'aulas') => void
 }
 
 const initialProgress: UserProgress = {

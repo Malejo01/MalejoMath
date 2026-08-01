@@ -64,16 +64,22 @@ export async function upsertTeacherSubject(params: {
   subjectName: string
   iconName: SubjectIconName
   colorName: SubjectColorName
+  /** Known only for programs built with the subject wizard (migration 014). */
+  nivel?: string | null
 }): Promise<void> {
   const slug = `teacher-${params.programId}-${slugifySubject(params.subjectName)}`
+  const nivel = params.nivel ?? null
 
   await sql`
-    INSERT INTO subjects (slug, display_name, source, icon_name, color_name, teacher_program_id)
-    VALUES (${slug}, ${params.subjectName}, 'teacher', ${params.iconName}, ${params.colorName}, ${params.programId})
+    INSERT INTO subjects (slug, display_name, source, icon_name, color_name, nivel, teacher_program_id)
+    VALUES (${slug}, ${params.subjectName}, 'teacher', ${params.iconName}, ${params.colorName}, ${nivel}, ${params.programId})
     ON CONFLICT (slug) DO UPDATE SET
       display_name = EXCLUDED.display_name,
       icon_name = EXCLUDED.icon_name,
       color_name = EXCLUDED.color_name,
+      -- Keep the existing nivel when the caller doesn't know it, so an edit
+      -- from a legacy code path can't blank out data the wizard already wrote.
+      nivel = COALESCE(EXCLUDED.nivel, subjects.nivel),
       updated_at = NOW()
   `
 }

@@ -1,14 +1,26 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 
-// Routes that do NOT require authentication
+// Routes that do NOT require a NextAuth session.
+//
+// The aula routes are listed here because a guest student has no NextAuth
+// session at all — they carry a signed guest cookie instead. Each of those
+// handlers resolves the viewer itself (getViewer) and answers 401 when there
+// is neither identity, so "public" here means "the middleware must not bounce
+// them to /sign-in", not "unauthenticated access allowed".
 const PUBLIC_PATHS = [
   '/',
   '/sign-in',
   '/sign-up',
-  '/api/auth',         // NextAuth's own routes
-  '/api/generate-quiz', // Public quiz generation (kept public as before)
-  '/api/explain-error', // Public error explanation
+  '/api/auth',            // NextAuth's own routes
+  '/api/generate-quiz',   // Public quiz generation (kept public as before)
+  '/api/explain-error',   // Public error explanation
+  '/aula',                // Join-by-code page
+  '/aulas',               // "Mis aulas"
+  '/api/classrooms',      // Join endpoint
+  '/api/student',         // Student-side aula endpoints
+  '/api/quiz/save-result',      // Guests submit attempts too
+  '/api/quiz/grade-short-answer',
 ]
 
 function isPublic(pathname: string): boolean {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { GraduationCap, LogIn, ClipboardList, LogOut, ChevronDown, Menu, Home, Sparkles, GraduationCap as TeacherIcon } from 'lucide-react'
+import { GraduationCap, LogIn, ClipboardList, LogOut, ChevronDown, Menu, Home, Sparkles, Users, GraduationCap as TeacherIcon } from 'lucide-react'
 import { useSession, signIn, signOut } from 'next-auth/react'
 import { StreakBadge } from './streak-badge'
 import { useAppStore } from '@/lib/store'
@@ -31,7 +31,40 @@ export function Navbar() {
 
   const navLinks = isTeacher
     ? [...NAV_LINKS, { href: '/teacher', label: 'Panel Docente', icon: TeacherIcon }]
-    : NAV_LINKS
+    : [...NAV_LINKS, { href: '/aulas', label: 'Mis aulas', icon: Users }]
+
+  // A guest student has no NextAuth session, so `isSignedIn` is false for them.
+  // Their only destination is Mis aulas; everything else needs an account.
+  const [guestName, setGuestName] = useState<string | null>(null)
+  const isGuest = Boolean(guestName)
+
+  const visibleLinks = isSignedIn
+    ? navLinks
+    : isGuest
+      ? [{ href: '/aulas', label: 'Mis aulas', icon: Users }]
+      : []
+
+  useEffect(() => {
+    if (status !== 'unauthenticated') {
+      setGuestName(null)
+      return
+    }
+
+    let isMounted = true
+
+    fetch('/api/student/classrooms')
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data?.viewer?.isGuest) setGuestName(data.viewer.displayName || 'Invitado')
+      })
+      .catch(() => {
+        // Anonymous visitor: nothing to show.
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [status])
 
   // Close menu on outside click
   useEffect(() => {
@@ -111,9 +144,9 @@ export function Navbar() {
         </div>
 
         {/* Center navigation (desktop) */}
-        {isSignedIn && (
+        {visibleLinks.length > 0 && (
           <nav className="hidden lg:flex items-center gap-1">
-            {navLinks.map((link) => {
+            {visibleLinks.map((link) => {
               const isActive = pathname === link.href
               return (
                 <Link
@@ -143,6 +176,12 @@ export function Navbar() {
           <div className="h-8 w-[1px] bg-border/50 mx-1 hidden xs:block" />
 
           {/* Signed-out state */}
+          {!isSignedIn && isGuest && (
+            <span className="hidden sm:inline text-xs text-muted-foreground mr-1">
+              Invitado: <span className="font-semibold text-foreground">{guestName}</span>
+            </span>
+          )}
+
           {!isSignedIn && (
             <button
               onClick={() => signIn('google')}
@@ -185,7 +224,7 @@ export function Navbar() {
                     <SheetTitle className="[font-family:var(--font-brand)]">MaestrIA</SheetTitle>
                   </SheetHeader>
                   <nav className="flex flex-col gap-1 px-4">
-                    {navLinks.map((link) => {
+                    {visibleLinks.map((link) => {
                       const isActive = pathname === link.href
                       return (
                         <Link

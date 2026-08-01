@@ -1,15 +1,60 @@
 import { sql } from '@/lib/db'
-import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { debugLog } from '@/lib/utils'
+import { getViewer } from '@/lib/auth-session'
+import { ASSIGNMENT_STATE_LABEL, assignmentState, canStartAssignment } from '@/lib/classrooms'
+
+/**
+ * Validates that this student may submit an attempt for an assigned quiz, and
+ * returns which attempt number it is. Re-checks the window server-side because
+ * the client could have had the page open since before the deadline.
+ */
+async function resolveAssignmentContext(userId: string, assignmentId: number) {
+  const rows = (await sql`
+    SELECT a.id, a.classroom_id, a.opens_at, a.due_at, a.max_attempts, c.status AS classroom_status
+    FROM classroom_assignments a
+    JOIN classrooms c ON c.id = a.classroom_id
+    JOIN classroom_members m ON m.classroom_id = c.id AND m.user_id = ${userId} AND m.status = 'active'
+    WHERE a.id = ${assignmentId}
+    LIMIT 1
+  `) as Record<string, any>[]
+
+  if (rows.length === 0) return { error: 'No encontramos ese cuestionario en tus aulas.', status: 404 as const }
+
+  const row = rows[0]
+  const attemptRows = (await sql`
+    SELECT COUNT(*)::int AS used FROM quiz_attempts
+    WHERE assignment_id = ${assignmentId} AND user_id = ${userId}
+  `) as { used: number }[]
+
+  const attemptsUsed = Number(attemptRows[0]?.used ?? 0)
+  const state = assignmentState(
+    {
+      opensAt: row.opens_at ? new Date(row.opens_at).toISOString() : null,
+      dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
+      maxAttempts: row.max_attempts === null ? null : Number(row.max_attempts),
+    },
+    attemptsUsed,
+    new Date(),
+    row.classroom_status
+  )
+
+  if (!canStartAssignment(state)) {
+    return { error: ASSIGNMENT_STATE_LABEL[state], status: 403 as const }
+  }
+
+  return { classroomId: Number(row.classroom_id), assignmentId, attemptNumber: attemptsUsed + 1 }
+}
 
 export async function POST(req: Request) {
   try {
     debugLog('[v0] Save-result API called')
-    
-    const session = await auth()
-    const userId = session?.user?.id ?? null
-    
+
+    // Guests count: they're a real users row, so their attempts, mastery and
+    // tips are stored exactly like a signed-in student's.
+    const viewer = await getViewer()
+    const userId = viewer?.id ?? null
+
     if (!userId) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
@@ -27,6 +72,36 @@ export async function POST(req: Request) {
     } = body
 
     const cleanSubject = subject || 'Matemática'
+
+    // Attempts made inside an aula carry the link; free practice doesn't.
+    const rawAssignmentId = Number(body?.assignmentId)
+    const hasAssignment = Number.isFinite(rawAssignmentId) && rawAssignmentId > 0
+
+    let classroomId: number | null = null
+    let assignmentId: number | null = null
+    let attemptNumber: number | null = null
+
+    if (hasAssignment) {
+      const context = await resolveAssignmentContext(userId, rawAssignmentId)
+      if ('error' in context) {
+        return NextResponse.json({ error: context.error }, { status: context.status })
+      }
+      classroomId = context.classroomId
+      assignmentId = context.assignmentId
+      attemptNumber = context.attemptNumber
+    } else {
+      const rawClassroomId = Number(body?.classroomId)
+      if (Number.isFinite(rawClassroomId) && rawClassroomId > 0) {
+        // Free practice inside an aula: tag it so the teacher sees the
+        // activity, but only if the student really belongs to that aula.
+        const membership = await sql`
+          SELECT 1 FROM classroom_members
+          WHERE classroom_id = ${rawClassroomId} AND user_id = ${userId} AND status = 'active'
+          LIMIT 1
+        `
+        if (membership.length > 0) classroomId = rawClassroomId
+      }
+    }
 
     // 1. Verificar/crear usuario en nuestra DB
     // The user is upserted at sign-in time in auth.ts, so this is a safety net.
@@ -56,13 +131,15 @@ export async function POST(req: Request) {
     debugLog('[v0] Creating quiz attempt...')
     const quizAttempt = await sql`
       INSERT INTO quiz_attempts (
-        user_id, subject, mode, topics, total_questions, 
-        correct_answers, incorrect_answers, score, passed, 
+        user_id, subject, mode, topics, total_questions,
+        correct_answers, incorrect_answers, score, passed,
+        classroom_id, assignment_id, attempt_number,
         started_at, completed_at
       )
       VALUES (
-        ${userId}, ${cleanSubject}, ${mode}, ${topicsStrings}, ${totalQuestions}, 
+        ${userId}, ${cleanSubject}, ${mode}, ${topicsStrings}, ${totalQuestions},
         ${correctAnswers}, ${incorrectAnswers}, ${score}, ${passed},
+        ${classroomId}, ${assignmentId}, ${attemptNumber},
         NOW(), NOW()
       )
       RETURNING id
@@ -174,9 +251,12 @@ export async function POST(req: Request) {
     }
 
     debugLog('[v0] Save completed successfully')
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       quizAttemptId,
+      classroomId,
+      assignmentId,
+      attemptNumber,
       message: 'Resultado guardado exitosamente'
     })
 

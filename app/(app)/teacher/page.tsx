@@ -20,17 +20,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  Target,
-  Sigma,
-  Calculator,
-  ChartLine,
-  FlaskConical,
-  Atom,
-  Ruler,
-  Landmark,
-  PieChart,
   BookOpen,
-  Upload,
+  Plus,
   Filter,
   Pencil,
   Trash2,
@@ -41,11 +32,17 @@ import {
   X,
   Download,
   GraduationCap,
+  AlertTriangle,
+  Users,
 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
-import { TeacherProgramUploadModal } from '@/components/teacher-program-upload-modal'
+import { TeacherSubjectWizard } from '@/components/teacher-subject-wizard'
+import { TeacherClassrooms } from '@/components/teacher-classrooms'
+import { ShareQuizDialog } from '@/components/share-quiz-dialog'
+import { SUBJECT_ICON_COMPONENTS } from '@/lib/subject-icons'
 import { useToast } from '@/hooks/use-toast'
 import { exportQuizToMoodleGift } from '@/lib/moodle-export'
+import { parseCreatedFrom, parseNivel } from '@/lib/teacher-programs'
 import type { TeacherProgram, TeacherQuiz } from '@/lib/types'
 
 type TeacherProgramApiShape = TeacherProgram & {
@@ -56,6 +53,7 @@ type TeacherProgramApiShape = TeacherProgram & {
   pedagogy_profile?: TeacherProgram['pedagogyProfile']
   source_file_name?: string | null
   created_at?: string
+  created_from?: TeacherProgram['createdFrom']
 }
 
 function normalizeTeacherProgram(program: TeacherProgramApiShape): TeacherProgram {
@@ -76,6 +74,10 @@ function normalizeTeacherProgram(program: TeacherProgramApiShape): TeacherProgra
     units: Array.isArray(program.units) ? program.units : [],
     sourceFileName: program.sourceFileName ?? program.source_file_name ?? null,
     createdAt: program.createdAt ?? program.created_at ?? new Date().toISOString(),
+    nivel: parseNivel(program.nivel),
+    grado: program.grado ? String(program.grado) : null,
+    jurisdiccion: program.jurisdiccion ? String(program.jurisdiccion) : null,
+    createdFrom: parseCreatedFrom(program.createdFrom ?? program.created_from),
   }
 }
 
@@ -98,19 +100,6 @@ function normalizeTeacherQuiz(quiz: Record<string, unknown>): TeacherQuiz {
     createdAt: String(quiz.created_at || new Date().toISOString()),
     updatedAt: String(quiz.updated_at || new Date().toISOString()),
   }
-}
-
-const programIconMap = {
-  'book-open': BookOpen,
-  calculator: Calculator,
-  sigma: Sigma,
-  'chart-line': ChartLine,
-  'flask-conical': FlaskConical,
-  atom: Atom,
-  ruler: Ruler,
-  landmark: Landmark,
-  'pie-chart': PieChart,
-  target: Target,
 }
 
 export default function TeacherPage() {
@@ -140,8 +129,8 @@ export default function TeacherPage() {
   const isTeacher = userProfile?.role === 'DOCENTE'
 
   const [activeSubject, setActiveSubject] = useState<string | null>(null)
-  const [showUploadModal, setShowUploadModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
+  const [showCreateWizard, setShowCreateWizard] = useState(false)
+  const [showEditWizard, setShowEditWizard] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showOnlyMySubjects, setShowOnlyMySubjects] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -149,6 +138,9 @@ export default function TeacherPage() {
   const [performedQuizzes, setPerformedQuizzes] = useState<Record<string, unknown>[]>([])
   const [expandedQuizId, setExpandedQuizId] = useState<number | null>(null)
   const [exportingQuizId, setExportingQuizId] = useState<number | null>(null)
+  // Saved quizzes can be published to an aula at any time, not only right
+  // after generating them.
+  const [sharingQuiz, setSharingQuiz] = useState<TeacherQuiz | null>(null)
   const mySubjectsScrollRef = useRef<HTMLDivElement | null>(null)
   const [canScrollMySubjectsLeft, setCanScrollMySubjectsLeft] = useState(false)
   const [canScrollMySubjectsRight, setCanScrollMySubjectsRight] = useState(false)
@@ -326,8 +318,11 @@ export default function TeacherPage() {
   const renderTeacherProgramCard = (program: TeacherProgram) => {
     const subjectId = `teacher-${program.id}`
     const isSelected = activeSubject === subjectId
-    const Icon = programIconMap[program.iconName] ?? BookOpen
+    const Icon = SUBJECT_ICON_COMPONENTS[program.iconName] ?? BookOpen
     const chipClass = SUBJECT_COLOR_CLASS[program.colorName]?.chip ?? 'bg-teal-500'
+    // Programs created before the wizard have no nivel/grado — stage 2 needs
+    // both to match a classroom, so nudge the teacher to fill them in.
+    const needsLevelData = !program.nivel || !program.grado
 
     return (
       <Card
@@ -341,7 +336,7 @@ export default function TeacherPage() {
           onClick={(event) => {
             event.stopPropagation()
             handleSubjectChange(subjectId)
-            setShowEditModal(true)
+            setShowEditWizard(true)
           }}
           aria-label="Editar materia"
         >
@@ -367,6 +362,24 @@ export default function TeacherPage() {
           <p className="font-semibold leading-snug whitespace-normal break-words text-sm sm:text-[15px] w-full px-1">
             {program.subjectName}
           </p>
+          {needsLevelData ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 hover:bg-amber-100"
+              onClick={(event) => {
+                event.stopPropagation()
+                handleSubjectChange(subjectId)
+                setShowEditWizard(true)
+              }}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              Completá nivel y año
+            </button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {program.nivel} · {program.grado}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">{program.units.length} unidades</p>
         </div>
       </Card>
@@ -469,7 +482,7 @@ export default function TeacherPage() {
       </div>
 
       <Card className="p-3 rounded-2xl border border-border/60 bg-card/75 backdrop-blur-md shadow-[0_6px_30px_rgba(23,23,23,0.06)]">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <Button
             className={`min-w-0 h-11 px-2 sm:px-3 rounded-xl justify-center sm:justify-start shadow-sm ${teacherSection === 'materias' ? 'bg-[var(--algebra-light)] text-[var(--algebra)] border-[var(--algebra)]/40 hover:bg-[var(--algebra-light)]' : 'bg-white/70 border-border/70 hover:bg-[var(--algebra-light)]/70 hover:text-[var(--algebra)]'}`}
             variant="outline"
@@ -494,6 +507,14 @@ export default function TeacherPage() {
             <BookOpen className="w-4 h-4 mr-2" />
             <span className="text-[11px] sm:text-xs md:text-sm leading-tight text-center sm:text-left whitespace-normal">Mis cuestionarios</span>
           </Button>
+          <Button
+            className={`min-w-0 h-11 px-2 sm:px-3 rounded-xl justify-center sm:justify-start shadow-sm ${teacherSection === 'aulas' ? 'bg-primary/10 text-primary border-primary/40 hover:bg-primary/10' : 'bg-white/70 border-border/70 hover:bg-primary/5 hover:text-primary'}`}
+            variant="outline"
+            onClick={() => setTeacherSection('aulas')}
+          >
+            <Users className="w-4 h-4 mr-2" />
+            <span className="text-[11px] sm:text-xs md:text-sm leading-tight text-center sm:text-left whitespace-normal">Mis aulas</span>
+          </Button>
         </div>
       </Card>
 
@@ -501,9 +522,9 @@ export default function TeacherPage() {
         {teacherSection === 'materias' && (
           <Card className="p-4 rounded-2xl border border-border/60 bg-card/75 backdrop-blur-md shadow-[0_6px_30px_rgba(23,23,23,0.06)] space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => setShowUploadModal(true)} className="rounded-xl font-bold">
-                <Upload className="w-4 h-4 mr-2" />
-                Subir Programa
+              <Button onClick={() => setShowCreateWizard(true)} className="rounded-xl font-bold">
+                <Plus className="w-4 h-4 mr-2" />
+                Crear materia
               </Button>
               <Button
                 variant={showFilters ? 'default' : 'outline'}
@@ -582,9 +603,9 @@ export default function TeacherPage() {
               {teacherPrograms.length === 0 && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">Todavia no cargaste materias propias.</p>
-                  <Button onClick={() => setShowUploadModal(true)}>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Subir Programa
+                  <Button onClick={() => setShowCreateWizard(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Crear materia
                   </Button>
                 </div>
               )}
@@ -604,6 +625,8 @@ export default function TeacherPage() {
             )}
           </Card>
         )}
+
+        {teacherSection === 'aulas' && <TeacherClassrooms programs={teacherPrograms} />}
 
         {teacherSection === 'cuestionarios' && (
           <Card className="p-4 rounded-2xl border border-border/60 bg-card/75 backdrop-blur-md shadow-[0_6px_30px_rgba(23,23,23,0.06)] space-y-3">
@@ -680,6 +703,10 @@ export default function TeacherPage() {
                             <Download className="w-4 h-4 mr-1" />
                             {exportingQuizId === quiz.id ? 'Exportando...' : 'Exportar Moodle'}
                           </Button>
+                          <Button size="sm" variant="outline" onClick={() => setSharingQuiz(quiz)}>
+                            <Users className="w-4 h-4 mr-1" />
+                            Asignar a un aula
+                          </Button>
                           <Button size="sm" variant="destructive" onClick={() => handleDeleteQuiz(quiz.id)}>
                             <Trash2 className="w-4 h-4 mr-1" />
                             Eliminar
@@ -708,18 +735,30 @@ export default function TeacherPage() {
         )}
       </div>
 
-      <TeacherProgramUploadModal
-        open={showUploadModal}
-        onOpenChange={setShowUploadModal}
+      <TeacherSubjectWizard
+        open={showCreateWizard}
+        onOpenChange={setShowCreateWizard}
         onProgramCreated={addTeacherProgram}
       />
 
-      <TeacherProgramUploadModal
-        open={showEditModal}
-        onOpenChange={setShowEditModal}
+      <TeacherSubjectWizard
+        open={showEditWizard}
+        onOpenChange={setShowEditWizard}
         onProgramCreated={addTeacherProgram}
         onProgramUpdated={(program) => updateTeacherProgram(program.id, program)}
         programToEdit={activeTeacherProgram}
+      />
+
+      <ShareQuizDialog
+        open={Boolean(sharingQuiz)}
+        onOpenChange={(open) => !open && setSharingQuiz(null)}
+        quiz={sharingQuiz}
+        onExportMoodle={() => sharingQuiz && handleExportQuiz(sharingQuiz)}
+        isExporting={exportingQuizId === sharingQuiz?.id}
+        onGoToClassrooms={() => {
+          setSharingQuiz(null)
+          setTeacherSection('aulas')
+        }}
       />
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

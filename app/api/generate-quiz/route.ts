@@ -2,6 +2,9 @@ import { generateObject, generateText, type RepairTextFunction } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import { buildEducationSystemPrompt } from '@/lib/education-context'
+import { sql } from '@/lib/db'
+import { getViewer, type Viewer } from '@/lib/auth-session'
+import { GUEST_DAILY_GENERATION_LIMIT } from '@/lib/classrooms'
 
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -544,90 +547,51 @@ function getSpecialistRole(subject: string): string {
   return `Eres un experto generador de exámenes universitarios especializado en ${subject}.`
 }
 
-function buildLocalFallbackQuestions({
-  subject,
-  topics,
-  mode,
-  questionCount,
-}: {
-  subject: string
-  topics: Array<{ id?: string; name?: string }>
-  mode: 'teorico' | 'practico' | 'mixto'
-  questionCount: number
-}) {
-  const safeTopics = Array.isArray(topics) && topics.length > 0
-    ? topics
-    : [{ id: 'general', name: 'Tema general' }]
 
-  const isAlgebra = subject.toLowerCase().includes('algebra') || subject.toLowerCase().includes('álgebra')
-  const questions = []
+/**
+ * Guests reach this route with nothing but an aula code, so a leaked code
+ * could otherwise burn the Gemini quota. Signed-in users are unaffected.
+ * Counted over a rolling 24h window rather than a calendar day, so a student
+ * can't reset their allowance at midnight and immediately spend it again.
+ */
+async function assertGuestGenerationAllowed(viewer: Viewer | null): Promise<Response | null> {
+  if (!viewer?.isGuest) return null
 
-  for (let i = 0; i < questionCount; i++) {
-    const topic = safeTopics[i % safeTopics.length]
-    const topicName = topic.name || 'Tema general'
-    const topicId = topic.id || `topic-${i + 1}`
-    const topicLower = topicName.toLowerCase()
+  const rows = (await sql`
+    SELECT COUNT(*)::int AS used
+    FROM ai_generation_log
+    WHERE user_id = ${viewer.id} AND created_at > NOW() - INTERVAL '24 hours'
+  `) as { used: number }[]
 
-    let question = `Sobre ${topicName}, selecciona la afirmación correcta.`
-    let options = [
-      'La afirmación principal es correcta en el caso planteado.',
-      'La afirmación principal es falsa en el caso planteado.',
-      'No se puede decidir con la información dada.',
-      'Depende de una condición adicional no indicada.'
-    ]
-    let correctAnswer = 0
-    let explanation = 'La opción correcta se obtiene aplicando la definición y las reglas del tema indicado.'
+  const used = Number(rows[0]?.used ?? 0)
+  if (used < GUEST_DAILY_GENERATION_LIMIT) return null
 
-    if (isAlgebra && (mode === 'practico' || mode === 'mixto')) {
-      if (topicLower.includes('lógica') || topicLower.includes('propos')) {
-        question = 'Si $p$ y $q$ son verdaderas, ¿cuál es el valor de $p \\leftrightarrow q$?'
-        options = ['Verdadero', 'Falso', 'Indeterminado', 'Depende del contexto']
-        correctAnswer = 0
-        explanation = 'El bicondicional $p \\leftrightarrow q$ es verdadero cuando $p$ y $q$ tienen el mismo valor de verdad.'
-      } else if (topicLower.includes('de morgan')) {
-        question = '¿Qué expresión es equivalente a $\\neg(p \\wedge q)$?'
-        options = ['$\\neg p \\vee \\neg q$', '$\\neg p \\wedge \\neg q$', '$p \\vee q$', '$p \\wedge q$']
-        correctAnswer = 0
-        explanation = 'Por la ley de De Morgan: $\\neg(p \\wedge q) \\equiv \\neg p \\vee \\neg q$.'
-      } else if (topicLower.includes('tautolog')) {
-        question = '¿Cuál de las siguientes proposiciones es una tautología?'
-        options = ['$p \\vee \\neg p$', '$p \\wedge \\neg p$', '$p \\rightarrow q$', '$p \\leftrightarrow q$']
-        correctAnswer = 0
-        explanation = 'La proposición $p \\vee \\neg p$ es siempre verdadera para cualquier valor de $p$.'
-      } else {
-        question = `En ${topicName}, si $p$ es verdadera y $q$ es falsa, ¿cuál es el valor de $p \\wedge q$?`
-        options = ['Falso', 'Verdadero', 'Indeterminado', 'Depende del orden']
-        correctAnswer = 0
-        explanation = 'La conjunción $p \\wedge q$ solo es verdadera cuando ambas proposiciones son verdaderas.'
-      }
-    } else if (mode === 'teorico') {
-      question = `En ${topicName}, ¿cuál describe mejor el objetivo central del tema?`
-      options = [
-        'Definir conceptos base y sus relaciones formales.',
-        'Evitar cualquier formalismo y trabajar solo con ejemplos.',
-        'Usar únicamente memorización de resultados sin justificación.',
-        'Reemplazar la teoría por cálculo numérico no relacionado.'
-      ]
-      correctAnswer = 0
-      explanation = 'El enfoque teórico busca comprensión conceptual y relación entre definiciones, propiedades y resultados.'
-    }
+  return Response.json(
+    {
+      questions: [],
+      error: `Como invitado podés generar ${GUEST_DAILY_GENERATION_LIMIT} cuestionarios por día. Iniciá sesión con Google para practicar sin límite — tu progreso se conserva.`,
+      guestLimitReached: true,
+    },
+    { status: 429 }
+  )
+}
 
-    questions.push({
-      id: `fallback-${i + 1}`,
-      type: 'multiple_choice' as const,
-      topic: topicId,
-      topicName,
-      question,
-      options,
-      correctAnswer,
-      explanation,
-    })
+async function recordGuestGeneration(viewer: Viewer | null): Promise<void> {
+  if (!viewer?.isGuest) return
+
+  try {
+    await sql`INSERT INTO ai_generation_log (user_id, created_at) VALUES (${viewer.id}, NOW())`
+  } catch (error) {
+    // Never fail a successful generation over bookkeeping.
+    console.error('[generate-quiz] no se pudo registrar el uso del invitado', error)
   }
-
-  return questions
 }
 
 export async function POST(req: Request) {
+  const viewer = await getViewer()
+  const guestLimitResponse = await assertGuestGenerationAllowed(viewer)
+  if (guestLimitResponse) return guestLimitResponse
+
   const {
     subject,
     subjectUnits = [],
@@ -670,8 +634,12 @@ export async function POST(req: Request) {
       if (matchNivel && matchNivel[1]) nivel = matchNivel[1]
     }
     if (!grado) {
-      const matchGrado = pedagogyContext.match(/Grado(?:\/Año)?:\s*([^\s|]+(?:\s+[^\s|]+)*)/i)
-      if (matchGrado && matchGrado[1]) grado = matchGrado[1]
+      // Stop at a newline or a pipe: callers send this context either as one
+      // pipe-separated line (practicar) or as several labelled lines
+      // (pedagogyProfileToContext). Matching across newlines swallowed every
+      // following label into "grado" and poisoned the prompt with a 4-line blob.
+      const matchGrado = pedagogyContext.match(/Grado(?:\/Año)?:\s*([^\n|]+)/i)
+      if (matchGrado && matchGrado[1].trim()) grado = matchGrado[1].trim()
     }
     if (!rawDifficulty) {
       const matchDiff = pedagogyContext.match(/Dificultad:\s*([a-zA-Záéíóúñ]+)/i)
@@ -781,6 +749,7 @@ export async function POST(req: Request) {
       const mixedQuestions = interleaveQuestions(teoricoCollected, practicoCollected, questionCount)
       const shuffledMixedQuestions = mixedQuestions.map((q, idx) => shuffleAndRenumber(q, `q${idx + 1}`))
 
+      await recordGuestGeneration(viewer)
       return Response.json({ questions: shuffledMixedQuestions })
     }
 
@@ -827,6 +796,7 @@ export async function POST(req: Request) {
 
     const shuffledQuestions = collectedQuestions.map((q, idx) => shuffleAndRenumber(q, `q${idx + 1}`))
 
+    await recordGuestGeneration(viewer)
     return Response.json({ questions: shuffledQuestions })
   } catch (error: any) {
     console.error('[POST] Final error:', {
@@ -836,19 +806,20 @@ export async function POST(req: Request) {
       stack: error?.stack?.substring(0, 500)
     })
 
-    const fallbackQuestions = buildLocalFallbackQuestions({
-      subject,
-      topics,
-      mode,
-      questionCount,
-    })
-
-    console.warn('[POST] Returning local fallback questions:', fallbackQuestions.length)
-
-    return Response.json({
-      questions: fallbackQuestions,
-      warning: 'Se uso un generador local de respaldo por un problema temporal con IA.',
-      error: error?.message || 'Error interno al generar el quiz'
-    })
+    // This used to answer 200 with buildLocalFallbackQuestions() — template
+    // items like "Sobre <tema>, selecciona la afirmación correcta." with four
+    // generic options. Callers only look at `questions`, so a failed AI call
+    // reached students as a real quiz: every question identical, every answer
+    // meaningless, and no sign anything had gone wrong. Failing loudly is the
+    // lesser harm; both the practicar page and subject-content already show a
+    // "no pudimos generar, intentá de nuevo" message on a non-OK response.
+    return Response.json(
+      {
+        questions: [],
+        error: 'La IA no pudo generar el cuestionario en este momento. Volvé a intentarlo en unos instantes.',
+        details: error?.message || 'Error interno al generar el quiz',
+      },
+      { status: 502 }
+    )
   }
 }

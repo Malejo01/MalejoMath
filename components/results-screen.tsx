@@ -46,10 +46,13 @@ export function ResultsScreen() {
 
   // Save quiz result to database
   useEffect(() => {
-    if (!isSignedIn || hasSavedRef.current || !config || answers.length === 0) return
-    
+    // Guests have no NextAuth session but do carry a signed aula cookie, so a
+    // quiz run inside an aula still saves — the API validates the identity.
+    const isAulaQuiz = Boolean(config?.classroomId || config?.assignmentId)
+    if ((!isSignedIn && !isAulaQuiz) || hasSavedRef.current || !config || answers.length === 0) return
+
     hasSavedRef.current = true
-    
+
     const saveResult = async () => {
       try {
         await fetch('/api/quiz/save-result', {
@@ -62,6 +65,8 @@ export function ResultsScreen() {
             totalQuestions: questions.length,
             correctAnswers: results.correct,
             score: results.score,
+            classroomId: config.classroomId ?? null,
+            assignmentId: config.assignmentId ?? null,
             answers: answers.map(a => ({
               ...a,
               explanation: a.explanation || '',

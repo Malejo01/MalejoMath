@@ -1,0 +1,203 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
+import { BadgeCheck, Lightbulb, Loader2, Target } from 'lucide-react'
+import { AccuracyBar, formatDateTime, formatScore } from '@/components/classroom-report-parts'
+
+interface StudentAttempt {
+  id: number
+  mode: string
+  score: number | null
+  passed: boolean
+  totalQuestions: number
+  correctAnswers: number
+  attemptNumber: number | null
+  completedAt: string
+  assignmentTitle: string | null
+}
+
+interface StudentTopic {
+  topicName: string
+  total: number
+  correct: number
+  accuracy: number
+}
+
+interface StudentTip {
+  topicName: string
+  misconceptionType: string
+  tip: string
+  resolved: boolean
+}
+
+interface ClassroomStudentDialogProps {
+  classroomId: number
+  student: { userId: string; displayName: string; isVerified: boolean } | null
+  onOpenChange: (open: boolean) => void
+}
+
+/**
+ * One student's file inside an aula: what they did, where they fail, and the
+ * tips the AI already gave them. Everything shown here is scoped to this aula
+ * (see the API) — the teacher never sees the student's activity elsewhere.
+ */
+export function ClassroomStudentDialog({ classroomId, student, onOpenChange }: ClassroomStudentDialogProps) {
+  const [isLoading, setIsLoading] = useState(false)
+  const [attempts, setAttempts] = useState<StudentAttempt[]>([])
+  const [topics, setTopics] = useState<StudentTopic[]>([])
+  const [tips, setTips] = useState<StudentTip[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!student) return
+
+    let isMounted = true
+    setIsLoading(true)
+    setError(null)
+
+    fetch(`/api/teacher/classrooms/${classroomId}/students/${encodeURIComponent(student.userId)}`)
+      .then(async (res) => ({ ok: res.ok, data: await res.json() }))
+      .then(({ ok, data }) => {
+        if (!isMounted) return
+        if (!ok) {
+          setError(data?.error || 'No se pudo abrir la ficha')
+          return
+        }
+        setAttempts(Array.isArray(data.attempts) ? data.attempts : [])
+        setTopics(Array.isArray(data.topics) ? data.topics : [])
+        setTips(Array.isArray(data.tips) ? data.tips : [])
+      })
+      .catch(() => {
+        if (isMounted) setError('No se pudo abrir la ficha')
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [classroomId, student])
+
+  return (
+    <Dialog open={Boolean(student)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="text-left">
+          <DialogTitle className="flex items-center gap-2">
+            {student?.displayName}
+            {student?.isVerified ? (
+              <BadgeCheck className="w-4 h-4 text-emerald-600" aria-label="Cuenta verificada" />
+            ) : (
+              <Badge variant="outline" className="h-5 text-[10px] px-1.5">
+                sin verificar
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription>Actividad de este alumno dentro del aula.</DialogDescription>
+        </DialogHeader>
+
+        {isLoading && (
+          <p className="text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Cargando ficha...
+          </p>
+        )}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {!isLoading && !error && (
+          <div className="space-y-4">
+            <Card className="p-4 space-y-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <Target className="w-4 h-4" />
+                Precisión por tema
+              </h3>
+
+              {topics.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Todavía no respondió preguntas en esta aula.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {topics.map((topic) => (
+                    <li key={topic.topicName} className="space-y-1">
+                      <div className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="min-w-0 break-words">{topic.topicName}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {topic.correct}/{topic.total}
+                        </span>
+                      </div>
+                      <AccuracyBar accuracy={topic.accuracy} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            <Card className="p-4 space-y-2">
+              <h3 className="font-semibold text-sm">Cuestionarios resueltos ({attempts.length})</h3>
+
+              {attempts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Todavía no resolvió ninguno.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground border-b">
+                        <th className="py-2 pr-3">Cuestionario</th>
+                        <th className="py-2 pr-3">Nota</th>
+                        <th className="py-2 pr-3">Aciertos</th>
+                        <th className="py-2">Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attempts.map((attempt) => (
+                        <tr key={attempt.id} className="border-b last:border-0">
+                          <td className="py-2 pr-3">
+                            <span className="break-words">{attempt.assignmentTitle ?? 'Práctica libre'}</span>
+                            {attempt.attemptNumber ? (
+                              <span className="text-xs text-muted-foreground"> · intento {attempt.attemptNumber}</span>
+                            ) : null}
+                          </td>
+                          <td className={`py-2 pr-3 font-semibold ${attempt.passed ? 'text-emerald-700' : 'text-destructive'}`}>
+                            {formatScore(attempt.score)}
+                          </td>
+                          <td className="py-2 pr-3 text-muted-foreground">
+                            {attempt.correctAnswers}/{attempt.totalQuestions}
+                          </td>
+                          <td className="py-2 text-muted-foreground">{formatDateTime(attempt.completedAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            {tips.length > 0 && (
+              <Card className="p-4 space-y-2">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4" />
+                  Errores detectados por la IA
+                </h3>
+                <ul className="space-y-2">
+                  {tips.map((tip, index) => (
+                    <li key={index} className="text-sm border-l-2 pl-3 py-0.5">
+                      <p className="font-medium">
+                        {tip.topicName}
+                        <span className="text-xs text-muted-foreground font-normal"> · {tip.misconceptionType}</span>
+                      </p>
+                      <p className="text-muted-foreground leading-snug">{tip.tip}</p>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}

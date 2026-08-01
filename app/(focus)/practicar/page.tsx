@@ -47,6 +47,7 @@ export default function PracticarPage() {
         nivel: selection.nivel,
         grado: selection.grado,
         difficulty: selection.difficulty,
+        questionTypes: selection.questionTypes,
         pedagogyContext: [
           `Nivel: ${selection.nivel}`,
           selection.grado ? `Grado/Año: ${selection.grado}` : null,
@@ -87,6 +88,7 @@ export default function PracticarPage() {
             topics: selection.selectedTopics.map((t) => ({ id: t.id, name: t.name })),
             mode: selection.mode,
             questionCount: questions.length,
+            questionTypes: selection.questionTypes,
             pedagogyContext: [
               `Nivel: ${selection.nivel}`,
               selection.grado ? `Grado/Año: ${selection.grado}` : null,

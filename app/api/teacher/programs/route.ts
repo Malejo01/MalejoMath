@@ -2,6 +2,9 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { upsertTeacherSubject } from '@/lib/subjects'
+import { DEFAULT_JURISDICTION } from '@/lib/curriculum-config'
+import { resolveGradoForNivel } from '@/lib/grado-server'
+import { parseCreatedFrom, parseNivel, withDerivedPedagogyProfile } from '@/lib/teacher-programs'
 import type { PedagogyProfile, ProgramUnit, SubjectColorName, SubjectIconName } from '@/lib/types'
 
 function isTeacherRole(role: unknown): boolean {
@@ -37,22 +40,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ programs: [] })
     }
 
-    // Try full query first (after migration 003); fall back if icon_name/color_name columns don't exist yet
+    // Widest query first (after migration 014), then degrade one migration at a
+    // time so a dashboard on an un-migrated DB still lists its programs.
     let programs: Awaited<ReturnType<typeof sql>>
     try {
       programs = await sql`
-        SELECT id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at
+        SELECT id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at,
+               nivel, grado, jurisdiccion, created_from
         FROM teacher_programs
         WHERE user_id = ${userId} AND status = 'active'
         ORDER BY created_at DESC
       `
     } catch {
-      programs = await sql`
-        SELECT id, user_id, subject_name, pedagogy_profile, units, source_file_name, created_at
-        FROM teacher_programs
-        WHERE user_id = ${userId} AND status = 'active'
-        ORDER BY created_at DESC
-      `
+      try {
+        programs = await sql`
+          SELECT id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at
+          FROM teacher_programs
+          WHERE user_id = ${userId} AND status = 'active'
+          ORDER BY created_at DESC
+        `
+      } catch {
+        programs = await sql`
+          SELECT id, user_id, subject_name, pedagogy_profile, units, source_file_name, created_at
+          FROM teacher_programs
+          WHERE user_id = ${userId} AND status = 'active'
+          ORDER BY created_at DESC
+        `
+      }
     }
 
     const { searchParams } = new URL(req.url)
@@ -61,10 +75,13 @@ export async function GET(req: Request) {
     const degreeFilter = searchParams.get('degree')?.trim().toLowerCase() || ''
     const createdAfter = searchParams.get('createdAfter')?.trim() || ''
 
-    const filteredPrograms = programs.filter((program) => {
+    const filteredPrograms = programs.filter((program: Record<string, any>) => {
       const pedagogyProfile = (program.pedagogy_profile || {}) as PedagogyProfile
       const matchesName = nameFilter.length === 0 || String(program.subject_name || '').toLowerCase().includes(nameFilter)
-      const matchesLevel = levelFilter.length === 0 || String(pedagogyProfile.level || '').toLowerCase().includes(levelFilter)
+      // Post-014 programs carry nivel in its own column; older ones only have
+      // the free-text profile level, so the filter has to look at both.
+      const levelHaystack = `${program.nivel ?? ''} ${pedagogyProfile.level ?? ''}`.toLowerCase()
+      const matchesLevel = levelFilter.length === 0 || levelHaystack.includes(levelFilter)
       const matchesDegree = degreeFilter.length === 0 || String(pedagogyProfile.degree || '').toLowerCase().includes(degreeFilter)
 
       const createdAtTime = new Date(program.created_at).getTime()
@@ -106,22 +123,34 @@ export async function POST(req: Request) {
     const sourceFileSizeBytes = body?.sourceFileSizeBytes ? Number(body.sourceFileSizeBytes) : null
     const iconName = (body?.iconName ? String(body.iconName) : 'book-open') as SubjectIconName
     const colorName = (body?.colorName ? String(body.colorName) : 'teal') as SubjectColorName
+    const nivel = parseNivel(body?.nivel)
+    const jurisdiccion = body?.jurisdiccion ? String(body.jurisdiccion).trim() : DEFAULT_JURISDICTION
+    // Snap "6" / "sexto" to the curriculum's own "6to Año" — grado is a join
+    // key, and a mismatched spelling silently empties the topic panel.
+    const grado = await resolveGradoForNivel(nivel, body?.grado ?? null, jurisdiccion)
+    const createdFrom = parseCreatedFrom(body?.createdFrom, sourceFileName ? 'upload' : 'manual')
 
     if (!subjectName) {
       return NextResponse.json({ error: 'La materia es obligatoria' }, { status: 400 })
+    }
+
+    if (body?.nivel && !nivel) {
+      return NextResponse.json({ error: 'El nivel debe ser Primario, Secundario o Superior' }, { status: 400 })
     }
 
     if (!Array.isArray(units) || units.length === 0) {
       return NextResponse.json({ error: 'Debes definir al menos una unidad' }, { status: 400 })
     }
 
+    const resolvedProfile = withDerivedPedagogyProfile(pedagogyProfile, nivel, grado)
+
     const requiredPedagogy = [
-      pedagogyProfile?.level,
-      pedagogyProfile?.degree,
-      pedagogyProfile?.academicYear,
-      pedagogyProfile?.complexity,
-      pedagogyProfile?.assessmentStyle,
-      pedagogyProfile?.methodology,
+      resolvedProfile?.level,
+      resolvedProfile?.degree,
+      resolvedProfile?.academicYear,
+      resolvedProfile?.complexity,
+      resolvedProfile?.assessmentStyle,
+      resolvedProfile?.methodology,
     ]
 
     if (requiredPedagogy.some((value) => !value || String(value).trim().length === 0)) {
@@ -140,6 +169,10 @@ export async function POST(req: Request) {
         source_mime_type,
         source_file_size_bytes,
         source_expires_at,
+        nivel,
+        grado,
+        jurisdiccion,
+        created_from,
         status,
         created_at,
         updated_at
@@ -149,17 +182,22 @@ export async function POST(req: Request) {
         ${subjectName},
         ${iconName},
         ${colorName},
-        ${JSON.stringify(pedagogyProfile)},
+        ${JSON.stringify(resolvedProfile)},
         ${JSON.stringify(units)},
         ${sourceFileName},
         ${sourceMimeType},
         ${sourceFileSizeBytes},
         NOW() + INTERVAL '24 hours',
+        ${nivel},
+        ${grado},
+        ${jurisdiccion},
+        ${createdFrom},
         'active',
         NOW(),
         NOW()
       )
-      RETURNING id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at
+      RETURNING id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at,
+                nivel, grado, jurisdiccion, created_from
     `
 
     const createdProgram = rows[0]
@@ -170,6 +208,7 @@ export async function POST(req: Request) {
         subjectName,
         iconName,
         colorName,
+        nivel,
       })
     } catch (registryError) {
       console.error('No se pudo registrar la materia en el indice de materias', registryError)

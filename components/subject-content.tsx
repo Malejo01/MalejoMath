@@ -12,11 +12,18 @@ import { pedagogyProfileToContext } from '@/lib/teacher-programs'
 import { QuizActionDialog } from './quiz-action-dialog'
 import { ShareQuizDialog } from './share-quiz-dialog'
 import { exportQuizToMoodleGift } from '@/lib/moodle-export'
-import type { ProgramUnit, Question, QuizActionMode, SubjectColorName, SubjectIconName, TeacherQuiz } from '@/lib/types'
+import type { ProgramUnit, Question, QuestionType, QuizActionMode, SubjectColorName, SubjectIconName, TeacherQuiz } from '@/lib/types'
+import { DEFAULT_QUESTION_TYPES } from '@/lib/question-types'
 import { useToast } from '@/hooks/use-toast'
 
 interface SubjectContentProps {
   subject: Subject
+  /**
+   * Set when the subject is being practised from inside an aula, so the
+   * resulting attempt is attributed to it and shows up on the teacher's
+   * roster. Free practice outside an aula leaves it undefined.
+   */
+  classroomId?: number
 }
 
 const MIN_QUESTION_COUNT = 5
@@ -60,7 +67,7 @@ const colorConfig = {
   }
 }
 
-export function SubjectContent({ subject }: SubjectContentProps) {
+export function SubjectContent({ subject, classroomId }: SubjectContentProps) {
   const { selectedTopics, toggleTopic, setActiveView, startQuiz, getUsedQuestionIds, addTeacherQuiz, setTeacherSection, userProfile, currentQuiz } = useAppStore()
   const [isLoading, setIsLoading] = useState(false)
   const [showModeDialog, setShowModeDialog] = useState(false)
@@ -69,6 +76,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
   const [selectedMode, setSelectedMode] = useState<'teorico' | 'practico' | 'mixto' | null>(null)
   const [selectedQuestionCount, setSelectedQuestionCount] = useState<number | null>(null)
   const [questionCountValue, setQuestionCountValue] = useState<string>(String(DEFAULT_QUESTION_COUNT))
+  const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<QuestionType[]>(DEFAULT_QUESTION_TYPES)
   const [pendingSharedQuiz, setPendingSharedQuiz] = useState<TeacherQuiz | null>(null)
   const [isExportingMoodle, setIsExportingMoodle] = useState(false)
   const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({})
@@ -184,6 +192,7 @@ export function SubjectContent({ subject }: SubjectContentProps) {
           topics: selectedTopics,
           mode,
           questionCount,
+          questionTypes: selectedQuestionTypes,
           pedagogyContext,
           previousQuestionIds: getUsedQuestionIds()
         })
@@ -365,7 +374,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
             topics: selectedTopics,
             mode: effectiveMode,
             questionCount: generatedQuestions.length,
+            questionTypes: selectedQuestionTypes,
             pedagogyContext,
+            classroomId,
           },
           generatedQuestions
         )
@@ -679,6 +690,9 @@ export function SubjectContent({ subject }: SubjectContentProps) {
         isQuestionCountValid={isQuestionCountValid}
         minQuestionCount={MIN_QUESTION_COUNT}
         maxQuestionCount={MAX_QUESTION_COUNT}
+        showQuestionTypeSelector
+        questionTypes={selectedQuestionTypes}
+        onQuestionTypesChange={setSelectedQuestionTypes}
       />
 
       {userProfile?.role === 'DOCENTE' && (
@@ -694,6 +708,11 @@ export function SubjectContent({ subject }: SubjectContentProps) {
             onOpenChange={setShowShareDialog}
             onExportMoodle={handleExportPendingShare}
             isExporting={isExportingMoodle}
+            quiz={pendingSharedQuiz}
+            onGoToClassrooms={() => {
+              setShowShareDialog(false)
+              setTeacherSection('aulas')
+            }}
           />
         </>
       )}

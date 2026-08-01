@@ -1,6 +1,7 @@
 import { BookOpen, GraduationCap, University } from 'lucide-react'
+import type { Nivel } from '@/lib/types'
 
-export type Nivel = 'Primario' | 'Secundario' | 'Superior'
+export type { Nivel }
 
 export const NIVEL_OPTIONS: { value: Nivel; label: string; sub: string; Icon: React.ElementType; color: string }[] = [
   {

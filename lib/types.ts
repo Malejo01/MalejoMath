@@ -82,6 +82,10 @@ export interface QuizConfig {
   misconceptionContext?: string
   /** Types to request from generate-quiz. Omit for multiple_choice-only (default, unchanged behavior). */
   questionTypes?: QuestionType[]
+  /** Set when the quiz is being run inside an aula, so the attempt is attributed to it. */
+  classroomId?: number
+  /** Set only for an assigned cuestionario; enforces the deadline and attempt cap. */
+  assignmentId?: number
 }
 
 interface BaseAnswer {
@@ -209,6 +213,13 @@ export interface AttemptAnswer {
 
 export type UserRole = 'ALUMNO' | 'DOCENTE'
 
+/**
+ * Educational levels the curriculum table is keyed by. Declared here (and
+ * re-exported from lib/nivel-options for the UI) so server code can use it
+ * without pulling the icon components that file imports into the bundle.
+ */
+export type Nivel = 'Primario' | 'Secundario' | 'Superior'
+
 export interface PedagogyProfile {
   level: string
   degree: string
@@ -218,9 +229,20 @@ export interface PedagogyProfile {
   methodology: string
 }
 
+/**
+ * Where a topic inside a teacher's program came from. 'curriculum' means the
+ * teacher picked it out of the official `curriculum` table (sourceEje keeps the
+ * eje it belonged to, so the UI can show provenance and avoid offering it
+ * twice); 'custom' means they typed it. Omitted on programs created before the
+ * subject wizard existed — treat a missing origin as 'custom'.
+ */
+export type ProgramTopicOrigin = 'curriculum' | 'custom'
+
 export interface ProgramTopic {
   id: string
   name: string
+  origin?: ProgramTopicOrigin
+  sourceEje?: string
 }
 
 export interface ProgramUnit {
@@ -228,6 +250,9 @@ export interface ProgramUnit {
   name: string
   topics: ProgramTopic[]
 }
+
+/** Which flow built the program. Drives copy and the "completá los datos" nudge. */
+export type ProgramCreatedFrom = 'upload' | 'curriculum' | 'manual'
 
 export interface TeacherProgram {
   id: number
@@ -239,6 +264,11 @@ export interface TeacherProgram {
   units: ProgramUnit[]
   sourceFileName: string | null
   createdAt: string
+  /** Null on programs created before migration 014 — the wizard asks for it on edit. */
+  nivel: Nivel | null
+  grado: string | null
+  jurisdiccion: string | null
+  createdFrom: ProgramCreatedFrom
 }
 
 export type SubjectIconName =
@@ -300,4 +330,78 @@ export interface UserProfile {
   role: UserRole
   nivel?: string
   grado?: string
+}
+
+// ─── Aulas (Docente ↔ Alumnos) ───────────────────────────────────────────────
+
+export type ClassroomStatus = 'open' | 'closed'
+
+/** One aula = one teacher program, reachable by its join code. */
+export interface Classroom {
+  id: number
+  teacherProgramId: number
+  name: string
+  joinCode: string
+  status: ClassroomStatus
+  subjectName: string
+  nivel: Nivel | null
+  grado: string | null
+  memberCount: number
+  assignmentCount: number
+  createdAt: string
+}
+
+export interface ClassroomMember {
+  id: number
+  userId: string
+  displayName: string
+  /** false for guests, who only typed a name — shown as "sin verificar". */
+  isVerified: boolean
+  joinedAt: string
+  attemptCount: number
+  averageScore: number | null
+  lastAttemptAt: string | null
+}
+
+/** The scheduling fields an assignment state is computed from. */
+export interface ClassroomAssignmentWindow {
+  opensAt: string | null
+  dueAt: string | null
+  maxAttempts: number | null
+}
+
+export interface ClassroomAssignment extends ClassroomAssignmentWindow {
+  id: number
+  teacherQuizId: number
+  title: string
+  mode: 'teorico' | 'practico' | 'mixto'
+  questionCount: number
+  createdAt: string
+}
+
+export type AssignmentState = 'disponible' | 'programada' | 'vencida' | 'sin_intentos' | 'cerrada'
+
+/** An assignment as one particular student sees it. */
+export interface StudentAssignment extends ClassroomAssignment {
+  state: AssignmentState
+  attemptsUsed: number
+  bestScore: number | null
+}
+
+/** Everything the student needs to practise inside an aula. */
+export interface StudentClassroom {
+  id: number
+  name: string
+  status: ClassroomStatus
+  teacherName: string
+  subjectName: string
+  nivel: Nivel | null
+  grado: string | null
+  iconName: SubjectIconName
+  colorName: SubjectColorName
+  teacherProgramId: number
+  units: ProgramUnit[]
+  pedagogyProfile?: PedagogyProfile
+  assignments: StudentAssignment[]
+  joinedAt: string
 }
