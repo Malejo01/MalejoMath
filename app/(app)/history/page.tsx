@@ -21,42 +21,70 @@ import {
   XCircle,
   AlertCircle,
   Lightbulb,
-  BarChart3,
+  Calculator,
   Sigma,
-  LineChart,
+  ChartLine as LineChart,
+  FlaskConical,
+  Atom,
+  Ruler,
+  Landmark,
+  PieChart,
+  Target,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SUBJECT_COLOR_CLASS } from '@/lib/subject-appearance'
 import Link from 'next/link'
-import type { QuizAttempt, TopicMastery, AttemptAnswer } from '@/lib/types'
+import type { QuizAttempt, TopicMastery, AttemptAnswer, SubjectColorName, SubjectIconName } from '@/lib/types'
 
-type SubjectFilter = 'all' | 'algebra' | 'analisis' | 'probabilidad'
 type ModeFilter = 'all' | 'teorico' | 'practico' | 'mixto'
 
-function getSubjectKey(subject: string): SubjectFilter {
-  const s = subject.toLowerCase()
-  if (s.includes('álgebra') || s.includes('algebra')) return 'algebra'
-  if (s.includes('análisis') || s.includes('analisis')) return 'analisis'
-  if (s.includes('probabilidad') || s.includes('estadística')) return 'probabilidad'
-  return 'all'
+interface SubjectMeta {
+  displayName: string
+  iconName: SubjectIconName
+  colorName: SubjectColorName
+  nivel: string | null
+  source: 'curriculum' | 'teacher'
 }
 
-const subjectColorVar: Record<string, string> = {
-  algebra: 'var(--algebra)',
-  analisis: 'var(--analysis)',
-  probabilidad: 'var(--probability)',
+const SUBJECT_ICON_MAP: Record<SubjectIconName, React.ElementType> = {
+  'book-open': BookOpen,
+  calculator: Calculator,
+  sigma: Sigma,
+  'chart-line': LineChart,
+  'flask-conical': FlaskConical,
+  atom: Atom,
+  ruler: Ruler,
+  landmark: Landmark,
+  'pie-chart': PieChart,
+  target: Target,
 }
 
-const subjectLightVar: Record<string, string> = {
-  algebra: 'var(--algebra-light)',
-  analisis: 'var(--analysis-light)',
-  probabilidad: 'var(--probability-light)',
-}
+const DEFAULT_SUBJECT_ICON: SubjectIconName = 'book-open'
+const DEFAULT_SUBJECT_COLOR: SubjectColorName = 'teal'
 
-const subjectIcon: Record<string, React.ElementType> = {
-  algebra: Sigma,
-  analisis: LineChart,
-  probabilidad: BarChart3,
+/** Formats a saved quiz_answers row's selected/correct value as display text, per question_type. */
+function formatAttemptAnswerText(answer: AttemptAnswer, which: 'selected' | 'correct'): string {
+  const payload = answer.answer_payload ?? {}
+  switch (answer.question_type) {
+    case 'true_false': {
+      const value = which === 'selected' ? payload.selectedAnswer : payload.correctAnswer
+      return value ? 'Verdadero' : 'Falso'
+    }
+    case 'numeric': {
+      const value = which === 'selected' ? payload.selectedValue : payload.correctAnswer
+      return String(value)
+    }
+    case 'short_answer':
+      return which === 'selected' ? String(payload.selectedText ?? '') : (Array.isArray(payload.acceptedAnswers) ? payload.acceptedAnswers.join(' / ') : '')
+    case 'multiple_choice':
+    default: {
+      const index = which === 'selected' ? answer.selected_answer : answer.correct_answer
+      const options = answer.options ?? []
+      if (index === undefined || index === null) return ''
+      return `${String.fromCharCode(65 + index)}) ${options[index] ?? ''}`
+    }
+  }
 }
 
 export default function HistoryPage() {
@@ -83,6 +111,7 @@ function HistoryPageContent() {
   const [loadingExplanation, setLoadingExplanation] = useState<string | null>(null)
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all')
+  const [subjectMeta, setSubjectMeta] = useState<Record<string, SubjectMeta | null>>({})
 
   const defaultTab = searchParams.get('tab') === 'reforzar' ? 'reforzar' : 'historial'
 
@@ -109,6 +138,34 @@ function HistoryPageContent() {
     const list = Array.from(new Set(attempts.map((a) => a.subject).filter(Boolean)))
     return ['all', ...list]
   }, [attempts])
+
+  useEffect(() => {
+    const allSubjects = Array.from(
+      new Set([...attempts.map((a) => a.subject), ...mastery.map((m) => m.subject)].filter(Boolean))
+    )
+    const pending = allSubjects.filter((s) => !(s in subjectMeta))
+    if (pending.length === 0) return
+
+    fetch(`/api/subjects/meta?names=${encodeURIComponent(pending.join(','))}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.subjects) {
+          setSubjectMeta((prev) => ({ ...prev, ...data.subjects }))
+        }
+      })
+      .catch((error) => console.error('Error fetching subject metadata:', error))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempts, mastery])
+
+  const getSubjectAppearance = (subject: string) => {
+    const meta = subjectMeta[subject]
+    const iconName = meta?.iconName ?? DEFAULT_SUBJECT_ICON
+    const colorName = meta?.colorName ?? DEFAULT_SUBJECT_COLOR
+    return {
+      Icon: SUBJECT_ICON_MAP[iconName] ?? BookOpen,
+      classes: SUBJECT_COLOR_CLASS[colorName] ?? SUBJECT_COLOR_CLASS[DEFAULT_SUBJECT_COLOR],
+    }
+  }
 
   const filteredAttempts = useMemo(() => {
     return attempts.filter((a) => {
@@ -153,6 +210,7 @@ function HistoryPageContent() {
   }
 
   const handleExplainError = async (answer: AttemptAnswer) => {
+    if (answer.question_type === 'short_answer') return
     const key = `${answer.id}`
     if (explanations[key]) return
 
@@ -163,9 +221,9 @@ function HistoryPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: answer.question_text,
-          selectedAnswer: answer.selected_answer,
-          correctAnswer: answer.correct_answer,
-          options: answer.options,
+          questionType: answer.question_type,
+          selectedText: formatAttemptAnswerText(answer, 'selected'),
+          correctText: formatAttemptAnswerText(answer, 'correct'),
           topic: answer.topic_name
         })
       })
@@ -188,12 +246,6 @@ function HistoryPageContent() {
       minute: '2-digit'
     })
   }
-
-  const getSubjectColor = (subject: string) =>
-    subjectColorVar[getSubjectKey(subject)] ?? 'var(--algebra)'
-
-  const getSubjectLight = (subject: string) =>
-    subjectLightVar[getSubjectKey(subject)] ?? 'var(--algebra-light)'
 
   if (!isLoaded) {
     return (
@@ -371,18 +423,14 @@ function HistoryPageContent() {
                 ) : (
                   <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
                     {filteredAttempts.map((attempt) => {
-                      const subjectKey = getSubjectKey(attempt.subject)
-                      const color = getSubjectColor(attempt.subject)
-                      const light = getSubjectLight(attempt.subject)
-                      const SubIcon = subjectIcon[subjectKey] ?? BookOpen
+                      const { Icon: SubIcon, classes } = getSubjectAppearance(attempt.subject)
                       const passed = Number(attempt.score) >= 6
                       const isExpanded = expandedAttempt === attempt.id
 
                       return (
                         <Card
                           key={attempt.id}
-                          className="border-2 overflow-hidden bg-card/80 backdrop-blur-sm self-start"
-                          style={{ borderColor: `${color}30` }}
+                          className={cn('border-2 overflow-hidden bg-card/80 backdrop-blur-sm self-start', classes.border)}
                         >
                           {/* Card header row */}
                           <div
@@ -392,18 +440,14 @@ function HistoryPageContent() {
                             <div className="flex items-start justify-between gap-3">
                               {/* Left: icon + info */}
                               <div className="flex items-start gap-3 flex-1 min-w-0">
-                                <div
-                                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                                  style={{ backgroundColor: light }}
-                                >
-                                  <SubIcon className="w-5 h-5" style={{ color }} />
+                                <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', classes.iconBg)}>
+                                  <SubIcon className={cn('w-5 h-5', classes.text)} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="font-bold text-foreground text-sm truncate">{attempt.subject}</p>
                                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                     <span
-                                      className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
-                                      style={{ backgroundColor: color }}
+                                      className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold text-white', classes.chip)}
                                     >
                                       {attempt.mode === 'teorico' ? 'Teórico' : attempt.mode === 'practico' ? 'Práctico' : 'Mixto'}
                                     </span>
@@ -427,7 +471,7 @@ function HistoryPageContent() {
                               {/* Right: score + chevron */}
                               <div className="flex items-center gap-2 shrink-0">
                                 <div className="text-right">
-                                  <p className="text-2xl font-black leading-none" style={{ color }}>
+                                  <p className={cn('text-2xl font-black leading-none', classes.text)}>
                                     {Number(attempt.score).toFixed(1)}
                                   </p>
                                   <p className="text-[11px] text-muted-foreground">
@@ -478,13 +522,11 @@ function HistoryPageContent() {
                                             <div className="text-xs space-y-1">
                                               <p className="text-destructive">
                                                 Tu respuesta:{' '}
-                                                {String.fromCharCode(65 + answer.selected_answer)}){' '}
-                                                <LaTeXRenderer content={answer.options[answer.selected_answer]} />
+                                                <LaTeXRenderer content={formatAttemptAnswerText(answer, 'selected')} />
                                               </p>
                                               <p className="text-[var(--analysis)]">
                                                 Correcta:{' '}
-                                                {String.fromCharCode(65 + answer.correct_answer)}){' '}
-                                                <LaTeXRenderer content={answer.options[answer.correct_answer]} />
+                                                <LaTeXRenderer content={formatAttemptAnswerText(answer, 'correct')} />
                                               </p>
                                             </div>
 
@@ -497,7 +539,7 @@ function HistoryPageContent() {
                                                   </div>
                                                 </div>
                                               </Card>
-                                            ) : (
+                                            ) : answer.question_type === 'short_answer' ? null : (
                                               <Button
                                                 variant="outline"
                                                 size="sm"
@@ -550,23 +592,16 @@ function HistoryPageContent() {
                   </h2>
                   <div className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
                     {mastery.map((item) => {
-                      const subjectKey = getSubjectKey(item.subject)
-                      const color = subjectColorVar[subjectKey] ?? 'var(--algebra)'
-                      const light = subjectLightVar[subjectKey] ?? 'var(--algebra-light)'
-                      const Icon = subjectIcon[subjectKey] ?? BookOpen
+                      const { Icon, classes } = getSubjectAppearance(item.subject)
 
                       return (
                         <Card
                           key={`${item.subject}-${item.topic_id}`}
-                          className="p-3 border-2 bg-card/80 backdrop-blur-sm"
-                          style={{ borderColor: `${color}30` }}
+                          className={cn('p-3 border-2 bg-card/80 backdrop-blur-sm', classes.border)}
                         >
                           <div className="flex items-center gap-3">
-                            <div
-                              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                              style={{ backgroundColor: light }}
-                            >
-                              <Icon className="w-4 h-4" style={{ color }} />
+                            <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', classes.iconBg)}>
+                              <Icon className={cn('w-4 h-4', classes.text)} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-semibold text-sm truncate">{item.topic_name}</p>
@@ -574,8 +609,8 @@ function HistoryPageContent() {
                             </div>
                             <div className="text-right shrink-0">
                               <div className="flex items-center gap-1">
-                                <TrendingUp className="w-4 h-4" style={{ color }} />
-                                <span className="font-black text-base" style={{ color }}>
+                                <TrendingUp className={cn('w-4 h-4', classes.text)} />
+                                <span className={cn('font-black text-base', classes.text)}>
                                   {Number(item.max_score).toFixed(1)}
                                 </span>
                               </div>
