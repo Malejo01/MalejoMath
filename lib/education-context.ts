@@ -99,7 +99,7 @@ ${emojiInstruction}`,
 - Tono súper cálido, amigable, empático y festivo (voseo/tuteo respetuoso).
 - Desdramatiza los errores con frases entusiastas: "¡Casi! Estás muy cerca..." o "¡Muy buena prueba! Mirémoslo juntos:".
 - CRÍTICO: NUNCA felicites al alumno diciendo "¡Excelente!" o "¡Lo hiciste genial!" cuando esté leyendo la explicación de una respuesta que respondió MAL. Marca el detalle con amabilidad y explica el concepto de forma directa.`,
-      contextualizacion: 'Contextualiza las situaciones dentro de entornos locales y cotidianos de Argentina (como la región del NOA / Salta cuando aplique).',
+      contextualizacion: 'Contextualiza las situaciones dentro de entornos locales y cotidianos de Argentina, usando la región o provincia correspondiente al estudiante cuando sea relevante.',
       estrategiaMateria,
     }
   }

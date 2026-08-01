@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { WeakPointsSection } from '@/components/weak-points-section'
 import { TipsChest } from '@/components/tips-chest'
+import { DEFAULT_JURISDICTION } from '@/lib/curriculum-config'
 import {
   Sparkles,
   ChevronRight,
@@ -55,17 +56,14 @@ export default function InicioPage() {
         <p className="text-sm text-muted-foreground mt-1">
           {isTeacher
             ? 'Gestioná tus materias, programas y cuestionarios educativos.'
-            : 'Practicá matemática con Inteligencia Artificial basada en tu plan de estudios.'}
+            : 'Practicá cualquier materia con Inteligencia Artificial basada en tu plan de estudios.'}
         </p>
       </div>
 
       {/* Call to Action Card */}
       <div className="p-6 sm:p-8 rounded-2xl bg-gradient-to-br from-primary via-indigo-600 to-violet-700 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-[-10px] bottom-[-20px] opacity-10 text-9xl font-bold select-none pointer-events-none">
-          f(x)
-        </div>
-        <div className="absolute right-[40px] top-[-10px] opacity-10 text-6xl font-bold select-none pointer-events-none">
-          ∑
+        <div className="absolute right-[-10px] bottom-[-30px] opacity-10 select-none pointer-events-none">
+          <Sparkles className="w-40 h-40" strokeWidth={1} />
         </div>
 
         <div className="relative z-10 max-w-lg space-y-4">
@@ -78,7 +76,7 @@ export default function InicioPage() {
             </h2>
             <p className="text-xs sm:text-sm text-white/80 mt-1.5 leading-relaxed">
               {isTeacher
-                ? 'Diseñá cuestionarios a medida basados en la Currícula Oficial de Salta o subiendo tu propio programa.'
+                ? `Diseñá cuestionarios a medida basados en la Currícula Oficial de ${DEFAULT_JURISDICTION} o subiendo tu propio programa.`
                 : 'Creá un cuestionario personalizado seleccionando tu grado, materia y temas específicos.'}
             </p>
           </div>

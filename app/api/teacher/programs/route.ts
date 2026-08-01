@@ -1,6 +1,7 @@
 ﻿import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
+import { upsertTeacherSubject } from '@/lib/subjects'
 import type { PedagogyProfile, ProgramUnit, SubjectColorName, SubjectIconName } from '@/lib/types'
 
 function isTeacherRole(role: unknown): boolean {
@@ -161,7 +162,20 @@ export async function POST(req: Request) {
       RETURNING id, user_id, subject_name, icon_name, color_name, pedagogy_profile, units, source_file_name, created_at
     `
 
-    return NextResponse.json({ program: rows[0] })
+    const createdProgram = rows[0]
+
+    try {
+      await upsertTeacherSubject({
+        programId: Number(createdProgram.id),
+        subjectName,
+        iconName,
+        colorName,
+      })
+    } catch (registryError) {
+      console.error('No se pudo registrar la materia en el indice de materias', registryError)
+    }
+
+    return NextResponse.json({ program: createdProgram })
   } catch (error) {
     return NextResponse.json(
       { error: 'No se pudo crear el programa', details: error instanceof Error ? error.message : String(error) },

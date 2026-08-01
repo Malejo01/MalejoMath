@@ -1,4 +1,5 @@
 import type { Question, TeacherQuiz } from '@/lib/types'
+import { sanitizeSubjectSegment as sanitizePathSegment, slugifySubject as toSlug } from '@/lib/subject-slug'
 
 const MAX_CATEGORY_TOPICS = 5
 
@@ -30,26 +31,6 @@ function escapeGiftText(text: string): string {
     .trim()
 }
 
-function sanitizePathSegment(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9\s_-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function toSlug(value: string): string {
-  const cleaned = sanitizePathSegment(value)
-  if (!cleaned) return 'sin-categoria'
-
-  return cleaned
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
 function extractTopicNames(quiz: TeacherQuiz): string[] {
   const selected = Array.isArray(quiz.selectedTopics)
     ? quiz.selectedTopics.map((topic) => sanitizePathSegment(topic.name)).filter(Boolean)
@@ -77,25 +58,48 @@ function buildCategoryPath(quiz: TeacherQuiz): string {
   return `$course$/${subject}/${topicNames.join('-')}`
 }
 
-function buildQuestionBlock(question: Question, index: number): string {
-  const questionTitle = `Q${index + 1}`
-  const questionText = escapeGiftText(question.question)
+function buildFeedback(question: Question): string {
+  return question.explanation.trim().length > 0
+    ? `\n#### ${escapeGiftText(question.explanation)}`
+    : ''
+}
+
+function buildMultipleChoiceBlock(questionTitle: string, questionText: string, question: Extract<Question, { type: 'multiple_choice' }>, index: number): string {
   const correctIndex = Number.isInteger(question.correctAnswer) ? question.correctAnswer : -1
+
+  if (correctIndex < 0 || correctIndex >= question.options.length) {
+    throw new Error(`La pregunta ${index + 1} no tiene una respuesta correcta valida.`)
+  }
 
   const options = question.options.map((option, optionIndex) => {
     const prefix = optionIndex === correctIndex ? '=' : '~'
     return `${prefix}${escapeGiftText(option)}`
   })
 
-  if (correctIndex < 0 || correctIndex >= question.options.length) {
-    throw new Error(`La pregunta ${index + 1} no tiene una respuesta correcta valida.`)
+  return `::${questionTitle}::${questionText} {\n${options.join('\n')}${buildFeedback(question)}\n}`
+}
+
+function buildQuestionBlock(question: Question, index: number): string {
+  const questionTitle = `Q${index + 1}`
+  const questionText = escapeGiftText(question.question)
+
+  switch (question.type) {
+    case 'multiple_choice':
+      return buildMultipleChoiceBlock(questionTitle, questionText, question, index)
+    case 'true_false':
+      return `::${questionTitle}::${questionText} {${question.correctAnswer ? 'TRUE' : 'FALSE'}}${buildFeedback(question)}`
+    case 'numeric': {
+      const tolerance = question.tolerance ? `:${question.tolerance}` : ''
+      return `::${questionTitle}::${questionText} {#${question.correctAnswer}${tolerance}}${buildFeedback(question)}`
+    }
+    case 'short_answer': {
+      if (question.acceptedAnswers.length === 0) {
+        throw new Error(`La pregunta ${index + 1} no tiene respuestas aceptadas validas.`)
+      }
+      const alternates = question.acceptedAnswers.map((answer) => `=${escapeGiftText(answer)}`).join('')
+      return `::${questionTitle}::${questionText} {${alternates}}${buildFeedback(question)}`
+    }
   }
-
-  const generalFeedback = question.explanation.trim().length > 0
-    ? `\n#### ${escapeGiftText(question.explanation)}`
-    : ''
-
-  return `::${questionTitle}::${questionText} {\n${options.join('\n')}${generalFeedback}\n}`
 }
 
 export function convertQuizToGift(quiz: TeacherQuiz): string {

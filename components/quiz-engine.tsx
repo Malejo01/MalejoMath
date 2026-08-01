@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -9,7 +9,11 @@ import { useAppStore } from '@/lib/store'
 import { LaTeXRenderer } from './latex-renderer'
 import { MathBackground } from './math-background'
 import { ExplanationModal } from './explanation-modal'
+import { AnswerInput, emptySelectionFor, type AnswerSelection } from './quiz-answer-inputs'
+import { AnswerRecap, answerRecapLine } from './answer-recap'
+import { isCorrectMultipleChoice, isCorrectNumeric, isCorrectTrueFalse } from '@/lib/answer-grading'
 import { cn } from '@/lib/utils'
+import type { Answer, MultipleChoiceQuestion } from '@/lib/types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,18 +26,23 @@ import {
 } from '@/components/ui/alert-dialog'
 
 type AnswerState = {
-  selected: number | null
+  selection: AnswerSelection | null
   submitted: boolean
   isCorrect: boolean | null
 }
 
 export function QuizEngine() {
   const { currentQuiz, answerQuestion, nextQuestion, previousQuestion, setActiveView, finishQuiz, updateQuestions } = useAppStore()
+  const { questions, currentIndex, config } = currentQuiz
+  const currentQuestion = questions[currentIndex]
+
   const [answerState, setAnswerState] = useState<AnswerState>({
-    selected: null,
+    selection: currentQuestion ? emptySelectionFor(currentQuestion) : null,
     submitted: false,
     isCorrect: null
   })
+  const [isGradingShortAnswer, setIsGradingShortAnswer] = useState(false)
+  const [shortAnswerFeedback, setShortAnswerFeedback] = useState<string | null>(null)
   const [detailedExplanation, setDetailedExplanation] = useState<string | null>(null)
   const [showExplanationModal, setShowExplanationModal] = useState(false)
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false)
@@ -43,8 +52,14 @@ export function QuizEngine() {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingAction, setPendingAction] = useState<'exit' | 'next' | 'prev' | 'cancel-edit' | null>(null)
 
-  const { questions, currentIndex, config } = currentQuiz
-  const currentQuestion = questions[currentIndex]
+  // Reset local per-question state whenever the question changes.
+  useEffect(() => {
+    if (!currentQuestion) return
+    setAnswerState({ selection: emptySelectionFor(currentQuestion), submitted: false, isCorrect: null })
+    setShortAnswerFeedback(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex])
+
   const isPreviewMode = Boolean(config?.previewOnly)
   const progress = isPreviewMode
     ? ((currentIndex + 1) / questions.length) * 100
@@ -76,17 +91,17 @@ export function QuizEngine() {
   }, [isFirstQuestion, isLastQuestion, nextQuestion, previousQuestion, setActiveView])
 
   const handleStartEditQuestion = useCallback(() => {
-    if (!isPreviewMode || !currentQuestion) return
+    if (!isPreviewMode || !currentQuestion || currentQuestion.type !== 'multiple_choice') return
     setQuestionDraft(currentQuestion.question)
     setOptionsDraft([...currentQuestion.options])
     setIsEditingQuestion(true)
   }, [isPreviewMode, currentQuestion])
 
   const handleSaveEditedQuestion = useCallback(() => {
-    if (!isPreviewMode || !currentQuestion) return
+    if (!isPreviewMode || !currentQuestion || currentQuestion.type !== 'multiple_choice') return
 
     const nextQuestions = questions.map((question, index) => (
-      index === currentIndex
+      index === currentIndex && question.type === 'multiple_choice'
         ? { ...question, question: questionDraft, options: [...optionsDraft] }
         : question
     ))
@@ -99,31 +114,96 @@ export function QuizEngine() {
     requestOrRunAction('cancel-edit', () => setIsEditingQuestion(false))
   }, [requestOrRunAction])
 
-  const handleSelectAnswer = useCallback((index: number) => {
+  const handleAnswerChange = useCallback((selection: AnswerSelection) => {
     if (isPreviewMode) return
     if (answerState.submitted) return
-    setAnswerState(prev => ({ ...prev, selected: index }))
+    setAnswerState(prev => ({ ...prev, selection }))
   }, [answerState.submitted, isPreviewMode])
 
-  const handleSubmit = useCallback(() => {
-    if (isPreviewMode) return
-    if (answerState.selected === null || !currentQuestion) return
-    
-    const isCorrect = answerState.selected === currentQuestion.correctAnswer
-    setAnswerState(prev => ({ ...prev, submitted: true, isCorrect }))
-    
-    answerQuestion({
-      questionId: currentQuestion.id,
-      questionText: currentQuestion.question,
-      options: currentQuestion.options,
-      selectedAnswer: answerState.selected,
-      correctAnswer: currentQuestion.correctAnswer,
+  /** Builds the typed Answer that gets persisted/recapped, given the current question + selection. */
+  const buildAnswer = useCallback((question: NonNullable<typeof currentQuestion>, selection: AnswerSelection, isCorrect: boolean): Answer => {
+    const base = {
+      questionId: question.id,
+      questionText: question.question,
       isCorrect,
-      topic: currentQuestion.topic,
-      topicName: currentQuestion.topicName,
-      explanation: currentQuestion.explanation
-    })
-  }, [answerState.selected, currentQuestion, answerQuestion, isPreviewMode])
+      topic: question.topic,
+      topicName: question.topicName,
+      explanation: question.explanation,
+    }
+    if (question.type === 'multiple_choice' && selection.type === 'multiple_choice') {
+      return { ...base, type: 'multiple_choice', options: question.options, selectedAnswer: selection.value ?? -1, correctAnswer: question.correctAnswer }
+    }
+    if (question.type === 'true_false' && selection.type === 'true_false') {
+      return { ...base, type: 'true_false', selectedAnswer: selection.value ?? false, correctAnswer: question.correctAnswer }
+    }
+    if (question.type === 'numeric' && selection.type === 'numeric') {
+      return { ...base, type: 'numeric', selectedValue: selection.value ?? NaN, correctAnswer: question.correctAnswer, tolerance: question.tolerance }
+    }
+    if (question.type === 'short_answer' && selection.type === 'short_answer') {
+      return { ...base, type: 'short_answer', selectedText: selection.value, acceptedAnswers: question.acceptedAnswers }
+    }
+    throw new Error('Selection type does not match question type')
+  }, [])
+
+  const handleSubmit = useCallback(async () => {
+    if (isPreviewMode) return
+    if (!currentQuestion || !answerState.selection) return
+    const selection = answerState.selection
+
+    if (currentQuestion.type === 'multiple_choice' && selection.type === 'multiple_choice') {
+      if (selection.value === null) return
+      const isCorrect = isCorrectMultipleChoice(currentQuestion, selection.value)
+      setAnswerState(prev => ({ ...prev, submitted: true, isCorrect }))
+      answerQuestion(buildAnswer(currentQuestion, selection, isCorrect))
+      return
+    }
+
+    if (currentQuestion.type === 'true_false' && selection.type === 'true_false') {
+      if (selection.value === null) return
+      const isCorrect = isCorrectTrueFalse(currentQuestion, selection.value)
+      setAnswerState(prev => ({ ...prev, submitted: true, isCorrect }))
+      answerQuestion(buildAnswer(currentQuestion, selection, isCorrect))
+      return
+    }
+
+    if (currentQuestion.type === 'numeric' && selection.type === 'numeric') {
+      if (selection.value === null) return
+      const isCorrect = isCorrectNumeric(currentQuestion, selection.value)
+      setAnswerState(prev => ({ ...prev, submitted: true, isCorrect }))
+      answerQuestion(buildAnswer(currentQuestion, selection, isCorrect))
+      return
+    }
+
+    if (currentQuestion.type === 'short_answer' && selection.type === 'short_answer') {
+      if (selection.value.trim().length === 0) return
+      setIsGradingShortAnswer(true)
+      try {
+        const response = await fetch('/api/quiz/grade-short-answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: currentQuestion.question,
+            acceptedAnswers: currentQuestion.acceptedAnswers,
+            studentAnswer: selection.value,
+            nivel: config?.nivel,
+            grado: config?.grado,
+          }),
+        })
+        const data = await response.json()
+        const isCorrect = Boolean(data.isCorrect)
+        setShortAnswerFeedback(typeof data.feedback === 'string' ? data.feedback : null)
+        setAnswerState(prev => ({ ...prev, submitted: true, isCorrect }))
+        answerQuestion(buildAnswer(currentQuestion, selection, isCorrect))
+      } catch {
+        // Grading failed — mark as submitted but ungraded rather than leaving the student stuck.
+        setShortAnswerFeedback('No se pudo corregir automáticamente. Revisa la respuesta esperada abajo.')
+        setAnswerState(prev => ({ ...prev, submitted: true, isCorrect: false }))
+        answerQuestion(buildAnswer(currentQuestion, selection, false))
+      } finally {
+        setIsGradingShortAnswer(false)
+      }
+    }
+  }, [answerState.selection, currentQuestion, answerQuestion, isPreviewMode, buildAnswer, config])
 
   const handleNext = useCallback(() => {
     if (isPreviewMode) {
@@ -144,7 +224,7 @@ export function QuizEngine() {
       setActiveView('results')
     } else {
       nextQuestion()
-      setAnswerState({ selected: null, submitted: false, isCorrect: null })
+      // answerState resets via the useEffect keyed on currentIndex once the store updates.
     }
   }, [isPreviewMode, isLastQuestion, finishQuiz, nextQuestion, requestOrRunAction, setActiveView])
 
@@ -158,26 +238,45 @@ export function QuizEngine() {
 
   const [modalInitialMode, setModalInitialMode] = useState<'explain' | 'revancha'>('explain')
 
+  // Revancha and "Explicar mi error" both need a fully-formed Answer to recap —
+  // short_answer is excluded from both in this phase (gated at render time).
+  const currentAnswer = currentQuestion && answerState.selection && answerState.submitted
+    ? buildAnswer(currentQuestion, answerState.selection, answerState.isCorrect ?? false)
+    : null
+
+  const isAnswerReady = (() => {
+    const selection = answerState.selection
+    if (!selection) return false
+    switch (selection.type) {
+      case 'multiple_choice':
+      case 'true_false':
+      case 'numeric':
+        return selection.value !== null
+      case 'short_answer':
+        return selection.value.trim().length > 0
+    }
+  })()
+
   const handleExplainError = useCallback(async () => {
-    if (!currentQuestion || answerState.selected === null) return
+    if (!currentQuestion || !currentAnswer || currentQuestion.type === 'short_answer') return
     setModalInitialMode('explain')
-    
+
     if (detailedExplanation) {
       setShowExplanationModal(true)
       return
     }
 
     setIsLoadingExplanation(true)
-    
+
     try {
       const response = await fetch('/api/explain-error', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: currentQuestion.question,
-          selectedAnswer: answerState.selected,
-          correctAnswer: currentQuestion.correctAnswer,
-          options: currentQuestion.options,
+          questionType: currentQuestion.type,
+          selectedText: answerRecapLine(currentAnswer, 'selected'),
+          correctText: answerRecapLine(currentAnswer, 'correct'),
           topic: currentQuestion.topicName,
           subject: config?.subjectName,
           pedagogyContext: config?.pedagogyContext,
@@ -185,7 +284,7 @@ export function QuizEngine() {
           grado: config?.grado,
         })
       })
-      
+
       const data = await response.json()
       setDetailedExplanation(data.explanation)
       setShowExplanationModal(true)
@@ -210,7 +309,7 @@ export function QuizEngine() {
     } finally {
       setIsLoadingExplanation(false)
     }
-  }, [currentQuestion, answerState.selected, config, detailedExplanation])
+  }, [currentQuestion, currentAnswer, config, detailedExplanation])
 
   const handleExit = useCallback(() => {
     if (isPreviewMode) {
@@ -285,7 +384,7 @@ export function QuizEngine() {
           {/* Question */}
           <Card className="p-6 border-2 border-border bg-card/90 backdrop-blur-sm shadow-lg">
             <div className="space-y-4">
-              {isPreviewMode && (
+              {isPreviewMode && currentQuestion.type === 'multiple_choice' && (
                 <div className="flex flex-wrap gap-2">
                   {!isEditingQuestion ? (
                     <Button type="button" variant="outline" onClick={handleStartEditQuestion}>
@@ -314,71 +413,33 @@ export function QuizEngine() {
             </div>
           </Card>
 
-          {/* Options */}
-          <div className="space-y-3">
-            {currentQuestion.options.map((option, index) => {
-              const isSelected = answerState.selected === index
-              const isCorrectAnswer = currentQuestion.correctAnswer === index
-              const showCorrect = answerState.submitted && isCorrectAnswer
-              const showIncorrect = answerState.submitted && isSelected && !isCorrectAnswer
+          {/* Answer input */}
+          {answerState.selection && (
+            <AnswerInput
+              question={currentQuestion}
+              selection={answerState.selection}
+              submitted={answerState.submitted}
+              onChange={handleAnswerChange}
+              isCorrect={answerState.submitted ? answerState.isCorrect : undefined}
+              disabled={isPreviewMode && !isEditingQuestion}
+              editing={isPreviewMode && isEditingQuestion && currentQuestion.type === 'multiple_choice'}
+              editedOptions={optionsDraft}
+              onEditOption={(index, value) => {
+                setOptionsDraft((prev) => {
+                  const next = [...prev]
+                  next[index] = value
+                  return next
+                })
+              }}
+            />
+          )}
 
-              const previewOptionValue = isEditingQuestion ? (optionsDraft[index] ?? option) : option
-
-              return (
-                <button
-                  key={index}
-                  onClick={() => handleSelectAnswer(index)}
-                  disabled={answerState.submitted || (isPreviewMode && !isEditingQuestion)}
-                  className={cn(
-                    'w-full text-left p-4 rounded-2xl border-2 transition-all duration-200',
-                    'touch-manipulation bg-card/80 backdrop-blur-sm',
-                    showIncorrect && 'animate-shake',
-                    isPreviewMode && !isEditingQuestion && 'border-border opacity-95 cursor-default',
-                    !isPreviewMode && !answerState.submitted && !isSelected && 'border-border hover:border-[var(--algebra)]/50 hover:shadow-md active:scale-[0.98]',
-                    !isPreviewMode && !answerState.submitted && isSelected && 'border-[var(--algebra)] bg-[var(--algebra-light)] shadow-lg shadow-[var(--algebra)]/20',
-                    showCorrect && 'border-[var(--analysis)] bg-[var(--analysis-light)] shadow-lg shadow-[var(--analysis)]/20 border-4',
-                    showIncorrect && 'border-destructive bg-destructive/10 shadow-lg shadow-destructive/20 border-4',
-                    !isPreviewMode && answerState.submitted && !showCorrect && !showIncorrect && 'border-border opacity-40'
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={cn(
-                      'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-lg font-bold transition-all border-2',
-                      !answerState.submitted && !isSelected && 'bg-muted text-muted-foreground border-transparent',
-                      !answerState.submitted && isSelected && 'bg-[var(--algebra)] text-white border-[var(--algebra)]',
-                      showCorrect && 'bg-[var(--analysis)] text-white border-[var(--analysis)]',
-                      showIncorrect && 'bg-destructive text-white border-destructive'
-                    )}>
-                      {answerState.submitted ? (
-                        showCorrect ? <Check className="w-6 h-6" strokeWidth={3} /> :
-                        showIncorrect ? <X className="w-6 h-6" strokeWidth={3} /> :
-                        String.fromCharCode(65 + index)
-                      ) : (
-                        String.fromCharCode(65 + index)
-                      )}
-                    </div>
-                    <span className="flex-1 min-w-0 pt-2.5 font-semibold text-base break-words overflow-x-auto max-w-full">
-                      {!isPreviewMode || !isEditingQuestion ? (
-                        <LaTeXRenderer content={previewOptionValue} className="text-foreground" />
-                      ) : (
-                        <input
-                          value={previewOptionValue}
-                          onChange={(event) => {
-                            setOptionsDraft((prev) => {
-                              const next = [...prev]
-                              next[index] = event.target.value
-                              return next
-                            })
-                          }}
-                          className="w-full border rounded-md px-2 py-1 bg-background text-sm"
-                        />
-                      )}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+          {isGradingShortAnswer && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground px-1">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Corrigiendo con IA...
+            </div>
+          )}
 
           {/* Feedback after answer - correct */}
           {!isPreviewMode && answerState.submitted && answerState.isCorrect && (
@@ -407,59 +468,48 @@ export function QuizEngine() {
                 <div className="flex-1 min-w-0 space-y-3 max-w-full overflow-hidden">
                   <h3 className="font-bold text-destructive text-lg">Respuesta Incorrecta</h3>
 
-                  {/* Tu respuesta vs Respuesta correcta */}
-                  <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 w-full min-w-0 max-w-full">
-                    <div className="p-3.5 rounded-2xl bg-destructive/10 border border-destructive/25 space-y-1 min-w-0 max-w-full overflow-hidden break-words">
-                      <span className="text-xs font-bold text-destructive uppercase tracking-wider block">
-                        🔴 Tu respuesta
-                      </span>
-                      <div className="text-sm font-medium text-foreground break-words min-w-0 overflow-hidden">
-                        <LaTeXRenderer
-                          content={`${String.fromCharCode(65 + (answerState.selected ?? 0))}) ${currentQuestion.options[answerState.selected ?? 0]}`}
-                        />
-                      </div>
-                    </div>
+                  {currentAnswer && <AnswerRecap answer={currentAnswer} />}
 
-                    <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 space-y-1 min-w-0 max-w-full overflow-hidden break-words">
-                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
-                        🟢 Respuesta correcta
-                      </span>
-                      <div className="text-sm font-medium text-foreground break-words min-w-0 overflow-hidden">
-                        <LaTeXRenderer
-                          content={`${String.fromCharCode(65 + currentQuestion.correctAnswer)}) ${currentQuestion.options[currentQuestion.correctAnswer]}`}
-                        />
-                      </div>
+                  {currentQuestion.type === 'short_answer' && shortAnswerFeedback && (
+                    <div className="text-sm text-foreground/80 leading-relaxed pt-1 break-words min-w-0 max-w-full overflow-hidden">
+                      <LaTeXRenderer content={shortAnswerFeedback} />
                     </div>
-                  </div>
+                  )}
 
                   <div className="text-sm text-foreground/80 leading-relaxed pt-1 break-words min-w-0 max-w-full overflow-hidden">
                     <LaTeXRenderer content={currentQuestion.explanation} />
                   </div>
 
-                  {/* Acciones directas post-error */}
-                  <div className="pt-2 flex flex-col sm:flex-row gap-2.5 w-full min-w-0 max-w-full">
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        setModalInitialMode('revancha')
-                        setShowExplanationModal(true)
-                      }}
-                      className="w-full sm:flex-1 h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs gap-1.5 shadow-md hover:from-amber-600 hover:to-orange-600 active:scale-95 whitespace-normal leading-tight px-3"
-                    >
-                      <Zap className="w-4 h-4 fill-white shrink-0" />
-                      <span>⚡ ¡Tomarme la Revancha ahora!</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleExplainError}
-                      disabled={isLoadingExplanation}
-                      className="w-full sm:flex-1 h-12 rounded-xl border-2 border-primary/40 bg-background text-primary font-bold text-xs gap-1.5 hover:bg-primary/10 whitespace-normal leading-tight px-3"
-                    >
-                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                      <span>Explicar mi error con la IA</span>
-                    </Button>
-                  </div>
+                  {/* Acciones directas post-error — Revancha y "Explicar con IA" están
+                      disponibles para multiple_choice/true_false/numeric; short_answer
+                      ya recibió feedback de IA en la corrección misma. */}
+                  {currentQuestion.type !== 'short_answer' && (
+                    <div className="pt-2 flex flex-col sm:flex-row gap-2.5 w-full min-w-0 max-w-full">
+                      {currentQuestion.type === 'multiple_choice' && (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setModalInitialMode('revancha')
+                            setShowExplanationModal(true)
+                          }}
+                          className="w-full sm:flex-1 h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs gap-1.5 shadow-md hover:from-amber-600 hover:to-orange-600 active:scale-95 whitespace-normal leading-tight px-3"
+                        >
+                          <Zap className="w-4 h-4 fill-white shrink-0" />
+                          <span>⚡ ¡Tomarme la Revancha ahora!</span>
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleExplainError}
+                        disabled={isLoadingExplanation}
+                        className="w-full sm:flex-1 h-12 rounded-xl border-2 border-primary/40 bg-background text-primary font-bold text-xs gap-1.5 hover:bg-primary/10 whitespace-normal leading-tight px-3"
+                      >
+                        <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                        <span>Explicar mi error con la IA</span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
@@ -494,43 +544,47 @@ export function QuizEngine() {
             <>
           {answerState.submitted && !answerState.isCorrect && (
             <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setModalInitialMode('revancha')
-                  setShowExplanationModal(true)
-                }}
-                className="flex-1 h-14 rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold text-xs sm:text-sm gap-1.5 hover:bg-amber-500/20 transition-all"
-              >
-                <Zap className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" />
-                <span className="truncate">⚡ Revancha</span>
-              </Button>
+              {currentQuestion.type === 'multiple_choice' && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setModalInitialMode('revancha')
+                    setShowExplanationModal(true)
+                  }}
+                  className="flex-1 h-14 rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold text-xs sm:text-sm gap-1.5 hover:bg-amber-500/20 transition-all"
+                >
+                  <Zap className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" />
+                  <span className="truncate">⚡ Revancha</span>
+                </Button>
+              )}
 
-              <Button
-                variant="outline"
-                onClick={handleExplainError}
-                disabled={isLoadingExplanation}
-                className="flex-1 h-14 rounded-2xl border-2 border-primary/30 font-bold text-primary text-xs sm:text-sm gap-1.5 hover:bg-primary/10 transition-all"
-              >
-                {isLoadingExplanation ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
-                    <span className="truncate">Analizando...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                    <span className="truncate">Explicar con IA</span>
-                  </>
-                )}
-              </Button>
+              {currentQuestion.type !== 'short_answer' && (
+                <Button
+                  variant="outline"
+                  onClick={handleExplainError}
+                  disabled={isLoadingExplanation}
+                  className="flex-1 h-14 rounded-2xl border-2 border-primary/30 font-bold text-primary text-xs sm:text-sm gap-1.5 hover:bg-primary/10 transition-all"
+                >
+                  {isLoadingExplanation ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                      <span className="truncate">Analizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                      <span className="truncate">Explicar con IA</span>
+                    </>
+                  )}
+                </Button>
+              )}
             </>
           )}
-          
+
           {!answerState.submitted ? (
             <Button
               onClick={handleSubmit}
-              disabled={answerState.selected === null}
+              disabled={!isAnswerReady || isGradingShortAnswer}
               className={cn(
                 'flex-1 h-14 text-base font-bold rounded-2xl shadow-lg transition-all',
                 'bg-gradient-to-r from-[var(--algebra)] to-[var(--algebra)]/80',
@@ -538,7 +592,11 @@ export function QuizEngine() {
                 'disabled:opacity-50 disabled:shadow-none disabled:scale-100'
               )}
             >
-              Verificar
+              {isGradingShortAnswer ? (
+                <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Corrigiendo...</span>
+              ) : (
+                'Verificar'
+              )}
             </Button>
           ) : (
             <Button
@@ -591,13 +649,13 @@ export function QuizEngine() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {showExplanationModal && currentQuestion && answerState.selected !== null && (
+      {showExplanationModal && currentQuestion && currentAnswer && (
         <ExplanationModal
           open={showExplanationModal}
           onClose={() => setShowExplanationModal(false)}
           question={currentQuestion.question}
-          userAnswer={`${String.fromCharCode(65 + answerState.selected)}) ${currentQuestion.options[answerState.selected]}`}
-          correctAnswer={`${String.fromCharCode(65 + currentQuestion.correctAnswer)}) ${currentQuestion.options[currentQuestion.correctAnswer]}`}
+          userAnswer={answerRecapLine(currentAnswer, 'selected')}
+          correctAnswer={answerRecapLine(currentAnswer, 'correct')}
           explanation={detailedExplanation || currentQuestion.explanation}
           topic={currentQuestion.topic}
           topicName={currentQuestion.topicName}
@@ -605,6 +663,7 @@ export function QuizEngine() {
           nivel={config?.nivel}
           grado={config?.grado}
           initialMode={modalInitialMode}
+          allowRevancha={currentQuestion.type === 'multiple_choice'}
         />
       )}
     </div>

@@ -70,19 +70,39 @@ export async function POST(req: Request) {
     const quizAttemptId = quizAttempt[0].id
     debugLog('[v0] Quiz attempt created with ID:', quizAttemptId)
 
-    // 4. Guardar cada respuesta
+    // 4. Guardar cada respuesta. multiple_choice sigue escribiendo las columnas
+    // legacy (options/selected_answer/correct_answer) para no romper lectores
+    // existentes; el resto usa answer_payload (ver migracion 013).
     debugLog('[v0] Saving', answers.length, 'answers...')
     for (let i = 0; i < answers.length; i++) {
       const answer = answers[i]
+      const questionType = answer.type || 'multiple_choice'
+
+      const isLegacyMultipleChoice = questionType === 'multiple_choice'
+      const options = isLegacyMultipleChoice ? JSON.stringify(answer.options) : null
+      const selectedAnswerColumn = isLegacyMultipleChoice ? answer.selectedAnswer : null
+      const correctAnswerColumn = isLegacyMultipleChoice ? answer.correctAnswer : null
+
+      let answerPayload: string | null = null
+      if (questionType === 'true_false') {
+        answerPayload = JSON.stringify({ selectedAnswer: answer.selectedAnswer, correctAnswer: answer.correctAnswer })
+      } else if (questionType === 'numeric') {
+        answerPayload = JSON.stringify({ selectedValue: answer.selectedValue, correctAnswer: answer.correctAnswer, tolerance: answer.tolerance ?? null })
+      } else if (questionType === 'short_answer') {
+        answerPayload = JSON.stringify({ selectedText: answer.selectedText, acceptedAnswers: answer.acceptedAnswers })
+      }
+
       await sql`
         INSERT INTO quiz_answers (
           quiz_attempt_id,
           question_index,
           question_id,
           question_text,
+          question_type,
           options,
           selected_answer,
           correct_answer,
+          answer_payload,
           is_correct,
           explanation,
           topic_name,
@@ -92,9 +112,11 @@ export async function POST(req: Request) {
           ${i},
           ${answer.questionId || `q-${i}`},
           ${answer.questionText},
-          ${JSON.stringify(answer.options)},
-          ${answer.selectedAnswer},
-          ${answer.correctAnswer},
+          ${questionType},
+          ${options},
+          ${selectedAnswerColumn},
+          ${correctAnswerColumn},
+          ${answerPayload},
           ${answer.isCorrect},
           ${answer.explanation || ''},
           ${answer.topicName || ''},

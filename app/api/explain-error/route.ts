@@ -5,15 +5,23 @@ import { getEducationContext } from '@/lib/education-context'
 export async function POST(req: Request) {
   const {
     question,
-    selectedAnswer,
-    correctAnswer,
-    options,
+    questionType,
+    selectedText,
+    correctText,
     topic,
     subject,
     pedagogyContext,
     nivel: rawNivel,
     grado: rawGrado,
   } = await req.json()
+
+  if (questionType === 'short_answer') {
+    return Response.json({ error: 'explain-error no soporta preguntas de tipo short_answer todavia.' }, { status: 400 })
+  }
+
+  if (typeof selectedText !== 'string' || typeof correctText !== 'string') {
+    return Response.json({ error: 'Faltan selectedText/correctText.' }, { status: 400 })
+  }
 
   let nivel = rawNivel
   let grado = rawGrado
@@ -30,19 +38,7 @@ export async function POST(req: Request) {
   }
 
   const eduCtx = getEducationContext(nivel, grado, subject || 'la materia')
-
-  // Contexto específico según la materia
-  let subjectContext = ''
-  if (subject?.toLowerCase().includes('álgebra') || subject?.toLowerCase().includes('algebra')) {
-    subjectContext = `
-CONTEXTO DE ÁLGEBRA:
-- Para sistemas de ecuaciones, considera el método de Gauss (escalonamiento).
-- Considera notación de lógica y conjuntos si aplica.`
-  } else if (subject?.toLowerCase().includes('análisis') || subject?.toLowerCase().includes('analisis')) {
-    subjectContext = `
-CONTEXTO DE ANÁLISIS MATEMÁTICO:
-- Aplica reglas de derivadas, límites o integrales según corresponda.`
-  }
+  const subjectContext = `\n${eduCtx.estrategiaMateria}`
 
   const pedagogySection = typeof pedagogyContext === 'string' && pedagogyContext.trim().length > 0
     ? `\nREFERENCIAS PEDAGÓGICAS ADICIONALES:\n${pedagogyContext}\n`
@@ -70,19 +66,16 @@ ${pedagogySection}
 PREGUNTA:
 ${question}
 
-OPCIONES:
-${options.map((opt: string, i: number) => `${String.fromCharCode(65 + i)}) ${opt}`).join('\n')}
-
-RESPUESTA DEL ESTUDIANTE: ${String.fromCharCode(65 + selectedAnswer)}) ${options[selectedAnswer]}
-RESPUESTA CORRECTA: ${String.fromCharCode(65 + correctAnswer)}) ${options[correctAnswer]}
+RESPUESTA DEL ESTUDIANTE: ${selectedText}
+RESPUESTA CORRECTA: ${correctText}
 
 Explica de forma muy visual, cercana y estructurada usando EXACTAMENTE este formato de 4 secciones:
 
 ## 1. 🧠 ¿Por qué elegiste esta opción? (Diagnóstico de tu respuesta)
-Analiza específicamente la opción que eligió el estudiante (${String.fromCharCode(65 + selectedAnswer)}: "${options[selectedAnswer]}"). Explícale de forma empática por qué es muy común cometer esa confusión a su edad. Marca el detalle con calidez ("¡Atención!", "¡Casi!", "Es muy normal confundirse aquí porque..."). NUNCA lo felicites por haberse equivocado (no digas "¡Excelente!" ni "¡Lo hiciste genial!").
+Analiza específicamente lo que respondió el estudiante ("${selectedText}"). Explícale de forma empática por qué es muy común cometer esa confusión a su edad. Marca el detalle con calidez ("¡Atención!", "¡Casi!", "Es muy normal confundirse aquí porque..."). NUNCA lo felicites por haberse equivocado (no digas "¡Excelente!" ni "¡Lo hiciste genial!").
 
 ## 2. 💡 Explicación paso a paso
-Muestra cómo llegar a la respuesta correcta (${String.fromCharCode(65 + correctAnswer)}: "${options[correctAnswer]}") con un ejemplo claro y elementos visuales/emojis (🌱, ☀️, 💧, 🔢 según la materia). Sé conciso e ilustrativo.
+Muestra cómo llegar a la respuesta correcta ("${correctText}") con un ejemplo claro y elementos visuales/emojis (🌱, ☀️, 💧, 🔢 según la materia). Sé conciso e ilustrativo.
 
 ## 3. 📌 ¿Por qué la respuesta correcta es la única válida?
 Resume en 1 o 2 frases el concepto clave.

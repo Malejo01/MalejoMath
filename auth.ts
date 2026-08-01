@@ -10,6 +10,8 @@ declare module 'next-auth' {
       id: string
       role: 'ALUMNO' | 'DOCENTE' | null
       isOnboarded: boolean
+      nivel: string | null
+      grado: string | null
     } & DefaultSession['user']
   }
 }
@@ -20,6 +22,8 @@ declare module '@auth/core/jwt' {
     id: string
     role: 'ALUMNO' | 'DOCENTE' | null
     isOnboarded: boolean
+    nivel: string | null
+    grado: string | null
   }
 }
 
@@ -28,7 +32,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   // AUTH_SECRET is the canonical name in NextAuth v5.
   // Also accepts NEXTAUTH_SECRET for backward compatibility.
   trustHost: true,
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? 'malejo-math-fallback-secret-key-2026',
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? 'maestria-fallback-secret-key-2026',
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -127,25 +131,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Initial sign-in: set the stable user ID and load profile
         token.id = account.providerAccountId
         const rows = await sql`
-          SELECT role, is_onboarded
+          SELECT role, is_onboarded, nivel, grado
           FROM users
           WHERE id = ${token.id}
           LIMIT 1
         `
         token.role = (rows[0]?.role ?? null) as 'ALUMNO' | 'DOCENTE' | null
         token.isOnboarded = rows[0]?.is_onboarded ?? false
+        token.nivel = rows[0]?.nivel ?? null
+        token.grado = rows[0]?.grado ?? null
       }
 
       if (trigger === 'update' && token.id) {
         // Client called update() — re-read role from DB (e.g., after onboarding)
         const rows = await sql`
-          SELECT role, is_onboarded
+          SELECT role, is_onboarded, nivel, grado
           FROM users
           WHERE id = ${token.id}
           LIMIT 1
         `
         token.role = (rows[0]?.role ?? null) as 'ALUMNO' | 'DOCENTE' | null
         token.isOnboarded = rows[0]?.is_onboarded ?? false
+        token.nivel = rows[0]?.nivel ?? null
+        token.grado = rows[0]?.grado ?? null
       }
 
       return token
@@ -158,6 +166,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.user.id          = token.id as string
       session.user.role        = token.role as 'ALUMNO' | 'DOCENTE' | null
       session.user.isOnboarded = token.isOnboarded as boolean
+      session.user.nivel       = token.nivel as string | null
+      session.user.grado       = token.grado as string | null
       return session
     },
   },

@@ -61,7 +61,10 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
 
   const toggleExpand = (id: string) => setExpandedId((prev) => (prev === id ? null : id))
 
+  // Inline editing is multiple_choice only for now — other types render
+  // read-only in the expanded view (see the questions list below).
   const startEditing = (q: Question) => {
+    if (q.type !== 'multiple_choice') return
     setEditingId(q.id)
     setEditQuestionText(q.question)
     setEditOptions([...q.options])
@@ -72,7 +75,7 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
   const saveQuestionEdit = (id: string) => {
     setQuestions((prev) =>
       prev.map((q) =>
-        q.id === id
+        q.id === id && q.type === 'multiple_choice'
           ? {
               ...q,
               question: editQuestionText,
@@ -331,17 +334,19 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
                   </span>
                 </button>
                 <div className="flex items-center gap-2 flex-shrink-0 self-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (expandedId !== q.id) setExpandedId(q.id)
-                      startEditing(q)
-                    }}
-                    className="p-1 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                    aria-label="Editar pregunta"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
+                  {q.type === 'multiple_choice' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (expandedId !== q.id) setExpandedId(q.id)
+                        startEditing(q)
+                      }}
+                      className="p-1 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                      aria-label="Editar pregunta"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeQuestion(q.id)}
@@ -433,7 +438,7 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
                   </div>
                 ) : (
                   <div className="px-4 pb-4 border-t border-border/50 pt-3 space-y-2">
-                    {q.options.map((opt, oi) => (
+                    {q.type === 'multiple_choice' && q.options.map((opt, oi) => (
                       <div
                         key={oi}
                         className={cn(
@@ -447,20 +452,37 @@ export function TeacherQuizGenerated({ questions: initialQuestions, selection, o
                         <LaTeXRenderer content={opt} />
                       </div>
                     ))}
+                    {q.type === 'true_false' && (
+                      <div className="px-3 py-2 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300">
+                        Respuesta correcta: {q.correctAnswer ? 'Verdadero' : 'Falso'}
+                      </div>
+                    )}
+                    {q.type === 'numeric' && (
+                      <div className="px-3 py-2 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300">
+                        Respuesta correcta: {q.correctAnswer}{q.tolerance ? ` (± ${q.tolerance})` : ''}
+                      </div>
+                    )}
+                    {q.type === 'short_answer' && (
+                      <div className="px-3 py-2 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300">
+                        Respuestas aceptadas: {q.acceptedAnswers.join(' / ')}
+                      </div>
+                    )}
                     {q.explanation && (
                       <div className="mt-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/20 text-xs text-muted-foreground">
                         <span className="font-semibold text-primary">Explicación: </span>
                         <LaTeXRenderer content={q.explanation} />
                       </div>
                     )}
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        onClick={() => startEditing(q)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border text-xs hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" /> Editar pregunta
-                      </button>
-                    </div>
+                    {q.type === 'multiple_choice' && (
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          onClick={() => startEditing(q)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border text-xs hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> Editar pregunta
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               )}

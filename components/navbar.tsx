@@ -105,7 +105,7 @@ export function Navbar() {
             <div className="absolute -inset-1 bg-primary/20 rounded-xl blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           </div>
           <div className="hidden sm:block">
-            <h1 className="text-lg font-semibold text-foreground tracking-[0.04em] leading-none [font-family:var(--font-brand)]">Malejo Math</h1>
+            <h1 className="text-lg font-semibold text-foreground tracking-[0.04em] leading-none [font-family:var(--font-brand)]">MaestrIA</h1>
             <p className="text-[9px] text-muted-foreground/70 font-semibold uppercase tracking-[0.18em] mt-0.5">Mastery Learning</p>
           </div>
         </div>
@@ -182,7 +182,7 @@ export function Navbar() {
                 </SheetTrigger>
                 <SheetContent side="right" className="w-72">
                   <SheetHeader>
-                    <SheetTitle className="[font-family:var(--font-brand)]">Malejo Math</SheetTitle>
+                    <SheetTitle className="[font-family:var(--font-brand)]">MaestrIA</SheetTitle>
                   </SheetHeader>
                   <nav className="flex flex-col gap-1 px-4">
                     {navLinks.map((link) => {

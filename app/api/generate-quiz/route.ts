@@ -7,106 +7,97 @@ const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 });
 
-// Schema Zod — más lenient para permitir variaciones
+// Schema Zod — un tipo por variante, discriminado por "type". Agregar un tipo
+// nuevo (essay, matching...) es sumar una variante acá + un caso en el switch
+// de PROMPT_FIELD_BLOCKS + un caso en el switch de shuffle más abajo.
+const baseQuestionFields = {
+  id: z.string().optional(),
+  topic: z.string().optional(),
+  topicName: z.string().optional(),
+  question: z.string(),
+  explanation: z.string(),
+}
+
+const multipleChoiceQuestionSchema = z.object({
+  ...baseQuestionFields,
+  type: z.literal('multiple_choice'),
+  options: z.array(z.string()),
+  correctAnswer: z.number(),
+})
+
+const shortAnswerQuestionSchema = z.object({
+  ...baseQuestionFields,
+  type: z.literal('short_answer'),
+  acceptedAnswers: z.array(z.string()).min(1),
+})
+
+const trueFalseQuestionSchema = z.object({
+  ...baseQuestionFields,
+  type: z.literal('true_false'),
+  correctAnswer: z.boolean(),
+})
+
+const numericQuestionSchema = z.object({
+  ...baseQuestionFields,
+  type: z.literal('numeric'),
+  correctAnswer: z.number(),
+  tolerance: z.number().optional(),
+})
+
+const questionSchema = z.discriminatedUnion('type', [
+  multipleChoiceQuestionSchema,
+  shortAnswerQuestionSchema,
+  trueFalseQuestionSchema,
+  numericQuestionSchema,
+])
+
 const quizSchema = z.object({
-  questions: z.array(z.object({
-    id: z.string().optional(),
-    topic: z.string().optional(),
-    topicName: z.string().optional(),
-    question: z.string(),
-    options: z.array(z.string()),
-    correctAnswer: z.number(),
-    explanation: z.string()
-  }))
+  questions: z.array(questionSchema),
 }).transform(data => ({
   questions: data.questions.map((q, idx) => ({
+    ...q,
     id: q.id || `q${idx + 1}`,
     topic: q.topic || 'unknown',
     topicName: q.topicName || 'Unknown Topic',
-    question: q.question,
-    options: q.options,
-    correctAnswer: Number(q.correctAnswer),
-    explanation: q.explanation
   }))
 }))
 
-// Curriculum oficial inyectado en el contexto de Gemini
-const ALGEBRA_CURRICULUM = `
-PROGRAMA OFICIAL DE ÁLGEBRA I:
+const QUESTION_TYPE_VALUES = ['multiple_choice', 'short_answer', 'true_false', 'numeric'] as const
+type QuestionType = (typeof QUESTION_TYPE_VALUES)[number]
 
-Unidad I: Lógica Proposicional
-- Proposición, Conectivos lógicos, Tablas de verdad, Tautologías
-- Leyes lógicas (De Morgan, Conmutativas, Asociativas, Distributivas)
-- Cuantificadores universales y existenciales
-- Métodos de demostración: Directo, Indirecto, Contraejemplo, Inducción
+const PROMPT_FIELD_BLOCKS: Record<QuestionType, string> = {
+  multiple_choice: `TIPO "multiple_choice":
+- type: "multiple_choice"
+- options: array de 4 strings
+- correctAnswer: number (índice 0-based de la opción correcta)`,
+  short_answer: `TIPO "short_answer":
+- type: "short_answer"
+- acceptedAnswers: array de 1 a 3 strings con respuestas correctas aceptadas (variantes cortas, sin explicación)`,
+  true_false: `TIPO "true_false":
+- type: "true_false"
+- correctAnswer: boolean (true o false)`,
+  numeric: `TIPO "numeric":
+- type: "numeric"
+- correctAnswer: number
+- tolerance: number opcional (margen de error aceptado, omitir si la respuesta debe ser exacta)`,
+}
 
-Unidad II: Ecuaciones e Inecuaciones
-- Ecuaciones polinómicas, Fórmula cuadrática, Discriminante
-- Números complejos: forma binómica, conjugado, módulo, operaciones
-- Ecuaciones racionales, con radicales, exponenciales y logarítmicas
-- Inecuaciones polinómicas, racionales, con valor absoluto
+function buildTypeInstructions(questionTypes: QuestionType[]): string {
+  const blocks = questionTypes.map((type) => PROMPT_FIELD_BLOCKS[type]).join('\n\n')
+  const typesList = questionTypes.join(', ')
 
-Unidad III: Matrices y Sistemas
-- Operaciones con matrices, Matriz inversa
-- Determinantes: cálculo y propiedades
-- Sistemas de ecuaciones: Método de Gauss (ESTÁNDAR DE LA CÁTEDRA)
-- Teorema de Rouché-Frobenius, Regla de Cramer
+  return `CAMPOS COMUNES A TODA PREGUNTA (además de los específicos del tipo):
+- id: string (ej: "q1", "q2")
+- topic: string (ID del tema)
+- topicName: string (nombre del tema)
+- question: string (enunciado adaptado a la edad, con LaTeX entre $ si aplica)
+- explanation: string (2-4 frases con tono empático y lenguaje acorde a la edad del estudiante)
 
-Unidad IV: Combinatoria y Vectores
-- Sumatoria, Productorio, Factorial
-- Números combinatorios, Binomio de Newton
-- Permutaciones, Variaciones, Combinaciones
-- Vectores en R2 y R3, Producto escalar y vectorial
-`
+TIPOS DE PREGUNTA A GENERAR (usa el campo "type" con EXACTAMENTE uno de estos valores: ${typesList}):
 
-const ANALISIS_CURRICULUM = `
-PROGRAMA OFICIAL DE ANÁLISIS MATEMÁTICO I:
-
-Unidad I: Límites y Continuidad
-- Límites: definición, propiedades, límites laterales
-- Límites notables, Asíntotas
-- Continuidad y tipos de discontinuidad
-
-Unidad II: Derivadas
-- Definición de derivada, Interpretación geométrica
-- Reglas de derivación: suma, producto, cociente, cadena
-- Aplicaciones: máximos, mínimos, concavidad
-- Regla de L'Hôpital
-
-Unidad III: Integrales
-- Integral indefinida, Métodos de integración
-- Integral definida, Teorema Fundamental del Cálculo
-- Cálculo de áreas y volúmenes
-
-Unidad IV: Series
-- Sucesiones y series numéricas
-- Criterios de convergencia
-- Series de Taylor y Maclaurin
-`
-
-const PROBABILIDAD_CURRICULUM = `
-PROGRAMA OFICIAL DE PROBABILIDAD Y ESTADÍSTICA:
-
-Unidad I: Estadística Descriptiva
-- Medidas de tendencia central: media, mediana, moda
-- Medidas de dispersión: varianza, desviación estándar
-- Representaciones gráficas
-
-Unidad II: Probabilidad
-- Espacio muestral, eventos, técnicas de conteo
-- Probabilidad clásica, condicional
-- Teorema de Bayes, Independencia
-
-Unidad III: Variables Aleatorias
-- Variables discretas: Binomial, Poisson
-- Variables continuas: Normal, Exponencial
-- Esperanza y varianza
-
-Unidad IV: Inferencia Estadística
-- Intervalos de confianza
-- Pruebas de hipótesis
-- Regresión lineal, Correlación
-`
+${blocks}
+${questionTypes.length > 1 ? '\nDistribuí las preguntas de forma pareja entre los tipos solicitados.' : ''}`
+}
 
 function shuffleInPlace<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -114,6 +105,27 @@ function shuffleInPlace<T>(arr: T[]): T[] {
     ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
   return arr
+}
+
+/** Shuffles options + remaps correctAnswer for multiple_choice only — every
+ *  other type has no options array to shuffle, so it passes through as-is. */
+function shuffleAndRenumber(question: any, newId: string): any {
+  if (question.type !== 'multiple_choice') {
+    return { ...question, id: newId }
+  }
+
+  const optionsWithIndex = question.options.map((text: string, index: number) => ({ text, index }))
+  shuffleInPlace(optionsWithIndex)
+
+  const newOptions = optionsWithIndex.map((o: { text: string }) => o.text)
+  const newCorrectAnswer = optionsWithIndex.findIndex((o: { index: number }) => o.index === question.correctAnswer)
+
+  return {
+    ...question,
+    id: newId,
+    options: newOptions,
+    correctAnswer: newCorrectAnswer,
+  }
 }
 
 const repairQuizJson: RepairTextFunction = async ({ text }) => {
@@ -173,9 +185,9 @@ function normalizeQuestionSetLogicalNotation(questions: any[]) {
     ...question,
     question: normalizeLogicalNotation(String(question.question || '')),
     explanation: normalizeLogicalNotation(String(question.explanation || '')),
-    options: Array.isArray(question.options)
-      ? question.options.map((option: unknown) => normalizeLogicalNotation(String(option)))
-      : [],
+    ...(Array.isArray(question.options)
+      ? { options: question.options.map((option: unknown) => normalizeLogicalNotation(String(option))) }
+      : {}),
   }))
 }
 
@@ -246,6 +258,7 @@ async function generateQuizBatchWithFallback({
   difficulty,
   nivel,
   grado,
+  questionTypes,
 }: {
   subject: string
   curriculum: string
@@ -258,6 +271,7 @@ async function generateQuizBatchWithFallback({
   difficulty: string
   nivel?: string
   grado?: string
+  questionTypes: QuestionType[]
 }) {
   const educationPrompt = buildEducationSystemPrompt({
     nivel,
@@ -275,7 +289,7 @@ ADAPTA el estilo de las preguntas estrictamente a la materia solicitada (${subje
 INSTRUCCIONES CRÍTICAS:
 1. Genera EXACTAMENTE ${questionCount} preguntas.
 2. Responde SOLO con JSON válido. Sin markdown, sin explicaciones fuera del JSON, sin comentarios.
-3. Estructura: { "questions": [ { id, topic, topicName, question, options, correctAnswer, explanation }, ... ] }
+3. Estructura: { "questions": [ { ...campos según tipo... }, ... ] }
 
 FORMATO ESTRICTO PARA CONTENIDO MATEMÁTICO (si aplica):
 - TODO contenido matemático debe estar entre $...$
@@ -283,14 +297,7 @@ FORMATO ESTRICTO PARA CONTENIDO MATEMÁTICO (si aplica):
 - Operadores lógicos: $p \\wedge q$ (y), $p \\vee q$ (o), $\\neg p$ (no), $p \\rightarrow q$ (si...entonces), $p \\leftrightarrow q$ (si y solo si)
 - Escapa backslashes: \\\\frac, \\\\sqrt, \\\\wedge (dos barras en JSON)
 
-CAMPOS OBLIGATORIOS POR PREGUNTA:
-- id: string (ej: "q1", "q2")
-- topic: string (ID del tema)
-- topicName: string (nombre del tema)
-- question: string (enunciado adaptado a la edad, con LaTeX entre $ si aplica)
-- options: array de strings (4 opciones acordes a la edad)
-- correctAnswer: number (0-based index)
-- explanation: string (2-4 frases con tono empático y lenguaje acorde a la edad del estudiante)`
+${buildTypeInstructions(questionTypes)}`
 
   const userPrompt = `Genera ${questionCount} preguntas para: ${subject}
 
@@ -311,7 +318,7 @@ IMPORTANTE: Responde SOLO JSON válido comenzando con { y terminando con }`
       model: google('gemini-2.5-flash'),
       schema: quizSchema,
       schemaName: 'quizQuestions',
-      schemaDescription: `Objeto JSON con exactamente ${questionCount} preguntas, cada una con id, topic, topicName, question, options (array), correctAnswer (0-based), explanation.`,
+      schemaDescription: `Objeto JSON con exactamente ${questionCount} preguntas, cada una con los campos correspondientes a su "type" (${questionTypes.join(', ')}).`,
       experimental_repairText: repairQuizJson,
       system: systemPrompt,
       prompt: userPrompt,
@@ -392,25 +399,38 @@ IMPORTANTE: Responde SOLO JSON válido comenzando con { y terminando con }`
       console.error('[Zod validation] ✗ Failed on', validated.error.issues.length, 'issue(s)')
       console.error('[Zod validation] Errors:', errors.substring(0, 500))
       
-      // If only some questions are invalid, try to use valid ones
+      // If only some questions are invalid, try to use valid ones. This is a
+      // last-resort text-repair path (primary generateObject + JSON repair
+      // both failed) — a missing "type" here defaults to multiple_choice,
+      // since that's the only type in practice until questionTypes carries
+      // more than one entry through a real caller.
       if (parsed.questions && Array.isArray(parsed.questions)) {
-        const validQuestions = parsed.questions.filter((q: any) => {
-          const isValid = q.question && Array.isArray(q.options) && 
-                 typeof q.correctAnswer === 'number' && q.explanation && q.options.length > 0
-          return isValid
-        })
-        
+        const validQuestions = parsed.questions
+          .map((q: any) => ({ ...q, type: q.type || 'multiple_choice' }))
+          .filter((q: any) => {
+            if (!q.question || !q.explanation) return false
+            switch (q.type) {
+              case 'multiple_choice':
+                return Array.isArray(q.options) && q.options.length > 0 && typeof q.correctAnswer === 'number'
+              case 'true_false':
+                return typeof q.correctAnswer === 'boolean'
+              case 'numeric':
+                return typeof q.correctAnswer === 'number'
+              case 'short_answer':
+                return Array.isArray(q.acceptedAnswers) && q.acceptedAnswers.length > 0
+              default:
+                return false
+            }
+          })
+
         if (validQuestions.length > 0) {
           console.warn(`[Zod validation] ⚠ Using ${validQuestions.length}/${parsed.questions.length} valid questions`)
-          // Manually map to ensure all required fields exist
           const normalizedValidQuestions = validQuestions.map((q: any, idx: number) => ({
+            ...q,
             id: q.id || `q${idx + 1}`,
             topic: q.topic || 'unknown',
             topicName: q.topicName || 'Unknown Topic',
-            question: q.question,
-            options: q.options,
-            correctAnswer: Number(q.correctAnswer),
-            explanation: q.explanation
+            correctAnswer: q.type === 'multiple_choice' || q.type === 'numeric' ? Number(q.correctAnswer) : q.correctAnswer,
           }))
 
           return normalizeQuestionSetLogicalNotation(normalizedValidQuestions)
@@ -437,6 +457,7 @@ async function generateQuizBatch({
   difficulty,
   nivel,
   grado,
+  questionTypes,
 }: {
   subject: string
   curriculum: string
@@ -449,6 +470,7 @@ async function generateQuizBatch({
   difficulty: string
   nivel?: string
   grado?: string
+  questionTypes: QuestionType[]
 }) {
   return generateQuizBatchWithFallback({
     subject,
@@ -462,6 +484,7 @@ async function generateQuizBatch({
     difficulty,
     nivel,
     grado,
+    questionTypes,
   })
 }
 
@@ -494,12 +517,11 @@ function buildCurriculumFromUnits(subject: string, units: any[]): string {
   return `PROGRAMA DE ${subject.toUpperCase()}:\n\n${unitsText}`
 }
 
-function getSpecialistRole(subject: string, source: string): string {
-  if (source === 'core') {
-    return 'Eres un experto generador de exámenes de matemáticas universitarias.'
-  }
-
+function getSpecialistRole(subject: string): string {
   const subjectLower = subject.toLowerCase()
+  if (subjectLower.includes('matemát') || subjectLower.includes('matemat') || subjectLower.includes('álgebra') || subjectLower.includes('algebra') || subjectLower.includes('análisis') || subjectLower.includes('analisis') || subjectLower.includes('cálculo') || subjectLower.includes('calculo') || subjectLower.includes('probabilidad') || subjectLower.includes('estadística') || subjectLower.includes('estadistica')) {
+    return `Eres un experto generador de exámenes de matemáticas especializado en ${subject}.`
+  }
   if (subjectLower.includes('programación') || subjectLower.includes('informatica') || subjectLower.includes('computación')) {
     return `Eres un experto generador de exámenes de programación e informática especializado en ${subject}.`
   }
@@ -592,6 +614,7 @@ function buildLocalFallbackQuestions({
 
     questions.push({
       id: `fallback-${i + 1}`,
+      type: 'multiple_choice' as const,
       topic: topicId,
       topicName,
       question,
@@ -607,7 +630,6 @@ function buildLocalFallbackQuestions({
 export async function POST(req: Request) {
   const {
     subject,
-    subjectSource = 'core',
     subjectUnits = [],
     topics,
     mode,
@@ -618,6 +640,7 @@ export async function POST(req: Request) {
     nivel: rawNivel,
     grado: rawGrado,
     difficulty: rawDifficulty,
+    questionTypes: rawQuestionTypes,
   } = await req.json()
 
   const parsedQuestionCount = Number(rawQuestionCount)
@@ -629,6 +652,13 @@ export async function POST(req: Request) {
       error: 'La cantidad de preguntas debe estar entre 1 y 50.'
     }, { status: 400 })
   }
+
+  // Defaults to multiple_choice-only — every existing caller that doesn't
+  // send questionTypes gets exactly today's behavior, unchanged.
+  const questionTypes: QuestionType[] = Array.isArray(rawQuestionTypes) && rawQuestionTypes.length > 0
+    ? rawQuestionTypes.filter((t: unknown): t is QuestionType => QUESTION_TYPE_VALUES.includes(t as QuestionType))
+    : ['multiple_choice']
+  const finalQuestionTypes = questionTypes.length > 0 ? questionTypes : ['multiple_choice' as const]
 
   let nivel = rawNivel
   let grado = rawGrado
@@ -661,22 +691,8 @@ export async function POST(req: Request) {
     .filter((question: string | undefined): question is string => Boolean(question))
   const previousQuestionFingerprints = new Set(previousQuestionTexts.map(normalizeQuestionText))
 
-  // Seleccionar o generar el curriculum apropiado
-  let curriculum = ALGEBRA_CURRICULUM
-  
-  if (subjectSource === 'teacher') {
-    // Para materias subidas, construir curriculum dinámicamente
-    curriculum = buildCurriculumFromUnits(subject, subjectUnits)
-  } else {
-    // Para materias core, usar curriculums predefinidos
-    if (subject.toLowerCase().includes('análisis') || subject.toLowerCase().includes('analisis')) {
-      curriculum = ANALISIS_CURRICULUM
-    } else if (subject.toLowerCase().includes('probabilidad') || subject.toLowerCase().includes('estadística')) {
-      curriculum = PROBABILIDAD_CURRICULUM
-    }
-  }
-
-  const specialistRole = getSpecialistRole(subject, subjectSource)
+  const curriculum = buildCurriculumFromUnits(subject, subjectUnits)
+  const specialistRole = getSpecialistRole(subject)
 
   const modeDescription = mode === 'teorico'
     ? 'MODO TEÓRICO: Preguntas conceptuales sobre definiciones, teoremas y propiedades. Sin cálculos numéricos complejos.'
@@ -717,6 +733,7 @@ export async function POST(req: Request) {
             difficulty,
             nivel,
             grado,
+            questionTypes: finalQuestionTypes,
           })
 
           for (const question of teoricoBatch) {
@@ -741,6 +758,7 @@ export async function POST(req: Request) {
             difficulty,
             nivel,
             grado,
+            questionTypes: finalQuestionTypes,
           })
 
           for (const question of practicoBatch) {
@@ -761,21 +779,7 @@ export async function POST(req: Request) {
       }
 
       const mixedQuestions = interleaveQuestions(teoricoCollected, practicoCollected, questionCount)
-
-      const shuffledMixedQuestions = mixedQuestions.map((q, idx) => {
-        const optionsWithIndex = q.options.map((text: string, index: number) => ({ text, index }))
-        shuffleInPlace(optionsWithIndex)
-
-        const newOptions = optionsWithIndex.map((o: { text: string }) => o.text)
-        const newCorrectAnswer = optionsWithIndex.findIndex((o: { index: number }) => o.index === q.correctAnswer)
-
-        return {
-          ...q,
-          id: `q${idx + 1}`,
-          options: newOptions,
-          correctAnswer: newCorrectAnswer
-        }
-      })
+      const shuffledMixedQuestions = mixedQuestions.map((q, idx) => shuffleAndRenumber(q, `q${idx + 1}`))
 
       return Response.json({ questions: shuffledMixedQuestions })
     }
@@ -793,6 +797,7 @@ export async function POST(req: Request) {
         difficulty,
         nivel,
         grado,
+        questionTypes: finalQuestionTypes,
       })
 
       console.log('[generateObject] Success! Questions:', generatedQuestions.length)
@@ -820,22 +825,7 @@ export async function POST(req: Request) {
       }, { status: 409 })
     }
 
-    const shuffledQuestions = collectedQuestions.map((q, idx) => {
-      const optionsWithIndex = q.options.map((text: string, index: number) => ({ text, index }))
-      shuffleInPlace(optionsWithIndex)
-
-      const newOptions = optionsWithIndex.map((o: { text: string }) => o.text)
-      const newCorrectAnswer = optionsWithIndex.findIndex(
-        (o: { index: number }) => o.index === q.correctAnswer
-      )
-
-      return {
-        ...q,
-        id: `q${idx + 1}`,
-        options: newOptions,
-        correctAnswer: newCorrectAnswer
-      }
-    })
+    const shuffledQuestions = collectedQuestions.map((q, idx) => shuffleAndRenumber(q, `q${idx + 1}`))
 
     return Response.json({ questions: shuffledQuestions })
   } catch (error: any) {

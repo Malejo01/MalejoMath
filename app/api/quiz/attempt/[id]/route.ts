@@ -39,14 +39,16 @@ export async function GET(
 
     // Obtener las respuestas del intento
     const answers = await sql`
-      SELECT 
+      SELECT
         id,
         question_index,
         question_id,
         question_text,
+        question_type,
         options,
         selected_answer,
         correct_answer,
+        answer_payload,
         is_correct,
         explanation,
         error_explanation,

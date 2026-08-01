@@ -16,7 +16,7 @@ export default function SignInPage() {
             <GraduationCap className="w-8 h-8 text-white" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">Malejo Math</h1>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">MaestrIA</h1>
             <p className="text-sm text-muted-foreground mt-1">Plataforma de Infraestructura Curricular</p>
           </div>
         </div>
