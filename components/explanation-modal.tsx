@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { LaTeXRenderer } from './latex-renderer'
 import { Sparkles, XCircle, CheckCircle2, Zap, Loader2, Award } from 'lucide-react'
-import type { Question } from '@/lib/types'
+import type { MultipleChoiceQuestion } from '@/lib/types'
 
 interface ExplanationModalProps {
   open: boolean
@@ -27,6 +27,8 @@ interface ExplanationModalProps {
   grado?: string
   initialMode?: 'explain' | 'revancha'
   onRevanchaSuccess?: () => void
+  /** Revancha only makes sense for multiple_choice questions today — pass false to hide it. */
+  allowRevancha?: boolean
 }
 
 const LOADING_MESSAGES = [
@@ -50,11 +52,12 @@ export function ExplanationModal({
   grado,
   initialMode = 'explain',
   onRevanchaSuccess,
+  allowRevancha = true,
 }: ExplanationModalProps) {
   const [revanchaState, setRevanchaState] = useState<'idle' | 'loading' | 'active' | 'success' | 'failed'>(
-    initialMode === 'revancha' ? 'loading' : 'idle'
+    initialMode === 'revancha' && allowRevancha ? 'loading' : 'idle'
   )
-  const [revanchaQuestion, setRevanchaQuestion] = useState<Question | null>(null)
+  const [revanchaQuestion, setRevanchaQuestion] = useState<MultipleChoiceQuestion | null>(null)
   const [selectedOpt, setSelectedOpt] = useState<number | null>(null)
   const [displayedText, setDisplayedText] = useState<string>('')
   const [loadingMsgIndex, setLoadingMsgIndex] = useState<number>(0)
@@ -94,14 +97,8 @@ export function ExplanationModal({
     return () => clearInterval(interval)
   }, [explanation, isLoadingExplanation])
 
-  // Auto-start revancha if requested
-  useState(() => {
-    if (initialMode === 'revancha') {
-      handleStartRevancha()
-    }
-  })
-
   const handleStartRevancha = async () => {
+    if (!allowRevancha) return
     setRevanchaState('loading')
     try {
       const res = await fetch('/api/quiz/revancha', {
@@ -123,7 +120,7 @@ export function ExplanationModal({
       const data = await res.json()
       if (!data.question) throw new Error('Pregunta no recibida')
 
-      setRevanchaQuestion(data.question)
+      setRevanchaQuestion(data.question as MultipleChoiceQuestion)
       setSelectedOpt(null)
       setRevanchaState('active')
     } catch (err) {
@@ -131,6 +128,14 @@ export function ExplanationModal({
       setRevanchaState('idle')
     }
   }
+
+  // Auto-start revancha if the modal was opened directly in that mode.
+  useEffect(() => {
+    if (initialMode === 'revancha' && allowRevancha) {
+      handleStartRevancha()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleVerifyRevancha = () => {
     if (!revanchaQuestion || selectedOpt === null) return
@@ -240,13 +245,15 @@ export function ExplanationModal({
 
             {/* Action buttons */}
             <div className="pt-2 space-y-2.5">
-              <Button
-                onClick={handleStartRevancha}
-                className="w-full h-13 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-base shadow-lg hover:from-amber-600 hover:to-orange-600 transition-all active:scale-95 gap-2"
-              >
-                <Zap className="w-5 h-5 fill-white" />
-                ¡Tomarme la Revancha! (1 pregunta nueva)
-              </Button>
+              {allowRevancha && (
+                <Button
+                  onClick={handleStartRevancha}
+                  className="w-full h-13 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-base shadow-lg hover:from-amber-600 hover:to-orange-600 transition-all active:scale-95 gap-2"
+                >
+                  <Zap className="w-5 h-5 fill-white" />
+                  ¡Tomarme la Revancha! (1 pregunta nueva)
+                </Button>
+              )}
 
               <Button
                 variant="ghost"

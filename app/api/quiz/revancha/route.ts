@@ -79,6 +79,7 @@ OBJETIVO PEDAGÓGICO:
       return Response.json({
         question: {
           id: `revancha-${Date.now()}`,
+          type: 'multiple_choice',
           topic: topic || 'revancha',
           topicName: topicName || subject || 'Revancha',
           question: object.question,
@@ -105,6 +106,7 @@ OBJETIVO PEDAGÓGICO:
       return Response.json({
         question: {
           id: `revancha-${Date.now()}`,
+          type: 'multiple_choice',
           topic: topic || 'revancha',
           topicName: topicName || subject || 'Revancha',
           question: parsed.question,

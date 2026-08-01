@@ -23,6 +23,7 @@ function makeQuiz(overrides: Partial<TeacherQuiz> = {}): TeacherQuiz {
     questions: [
       {
         id: 'q1',
+        type: 'multiple_choice',
         topic: 'limites',
         topicName: 'Límites',
         question: '¿Qué vale 2:1? Usa {a,b} ~ = # y $x^2$ y $$\\frac{1}{2}$$.',
@@ -61,6 +62,7 @@ function makeRealTeacherQuizFixture(): TeacherQuiz {
     questions: [
       {
         id: 'q1',
+        type: 'multiple_choice',
         topic: 'limites',
         topicName: 'Límite y continuidad',
         question: 'Si \\(f(x)=\\frac{x^2-1}{x-1}\\), entonces el límite cuando x tiende a 1 es:',
@@ -70,6 +72,7 @@ function makeRealTeacherQuizFixture(): TeacherQuiz {
       },
       {
         id: 'q2',
+        type: 'multiple_choice',
         topic: 'derivadas',
         topicName: 'Derivada como tasa de cambio',
         question: 'La derivada de \\(x^3\\) es:',
@@ -79,6 +82,7 @@ function makeRealTeacherQuizFixture(): TeacherQuiz {
       },
       {
         id: 'q3',
+        type: 'multiple_choice',
         topic: 'integrales',
         topicName: 'Integrales definidas',
         question: 'Dada la función por tramos \\(f(x) = \\begin{cases} x^2+2 & \\text{si } x \\le 1 \\\\ 3x-1 & \\text{si } x > 1 \\end{cases}\\), calcule \\(f(-1) + f(2)\\).',
@@ -88,6 +92,7 @@ function makeRealTeacherQuizFixture(): TeacherQuiz {
       },
       {
         id: 'q4',
+        type: 'multiple_choice',
         topic: 'integrales',
         topicName: 'Integrales definidas',
         question: '¿Cuál es el resultado de \\(\\int_0^1 2x\\,dx\\)?',
@@ -136,6 +141,7 @@ describe('moodle export GIFT', () => {
         questions: [
           {
             id: 'q1',
+            type: 'multiple_choice',
             topic: '',
             topicName: '',
             question: 'Pregunta sin tema',
@@ -151,6 +157,68 @@ describe('moodle export GIFT', () => {
     expect(buildMoodleFileName(makeQuiz({ subjectName: 'Probabilidad y Estadística', selectedTopics: [], questions: [] }))).toBe('probabilidad-y-estadistica_general.txt')
   })
 
+  it('exports true_false, numeric and short_answer questions in native GIFT syntax', () => {
+    const gift = convertQuizToGift(
+      makeQuiz({
+        questions: [
+          {
+            id: 'q1',
+            type: 'true_false',
+            topic: 'limites',
+            topicName: 'Límites',
+            question: 'El límite de una función siempre existe.',
+            correctAnswer: false,
+            explanation: 'No todos los límites existen.',
+          },
+          {
+            id: 'q2',
+            type: 'numeric',
+            topic: 'derivadas',
+            topicName: 'Derivadas',
+            question: '¿Cuánto vale la derivada de $x^2$ en $x=3$?',
+            correctAnswer: 6,
+            tolerance: 0.5,
+            explanation: 'La derivada es $2x$, evaluada en 3 da 6.',
+          },
+          {
+            id: 'q3',
+            type: 'short_answer',
+            topic: 'conceptos',
+            topicName: 'Conceptos',
+            question: '¿Cómo se llama la unidad estructural y funcional de los seres vivos?',
+            acceptedAnswers: ['célula', 'la célula'],
+            explanation: 'La célula es la unidad básica de la vida.',
+          },
+        ],
+      })
+    )
+
+    expect(gift).toContain('{FALSE}')
+    expect(gift).toContain('{#6:0.5}')
+    expect(gift).toContain('{=célula=la célula}')
+    expect((gift.match(/::Q\d+::/g) ?? []).length).toBe(3)
+  })
+
+  it('throws when a short_answer question has no accepted answers', () => {
+    expect(() =>
+      convertQuizToGift(
+        makeQuiz({
+          questions: [
+            {
+              id: 'q1',
+              type: 'short_answer',
+              topic: 'conceptos',
+              topicName: 'Conceptos',
+              question: 'Pregunta sin respuestas aceptadas',
+              acceptedAnswers: [],
+              explanation: '',
+            },
+          ],
+        })
+      )
+    ).toThrow('no tiene respuestas aceptadas validas.')
+  })
+
   it('throws when a question does not have a valid correct answer index', () => {
     expect(() =>
       convertQuizToGift(
@@ -158,6 +226,7 @@ describe('moodle export GIFT', () => {
           questions: [
             {
               id: 'q1',
+              type: 'multiple_choice',
               topic: 'limites',
               topicName: 'Límites',
               question: 'Pregunta inválida',
@@ -239,6 +308,7 @@ describe('moodle export GIFT', () => {
       questions: [
         {
           id: 'q1',
+          type: 'multiple_choice',
           topic: 'dominio',
           topicName: 'Dominio e Imagen',
           question: 'Determine el dominio de la función \\(f(x) = \\frac\{\\sqrt\{x+2\}\}\{\\ln(x-3)\}\\).',
@@ -248,6 +318,7 @@ describe('moodle export GIFT', () => {
         },
         {
           id: 'q2',
+          type: 'multiple_choice',
           topic: 'grafica',
           topicName: 'Grafica de funciones',
           question: 'Encuentre la ecuación de la recta que pasa por los puntos \\((1,4)\\) y \\((3,10)\\).',
@@ -272,6 +343,7 @@ describe('moodle export GIFT', () => {
         questions: [
           {
             id: 'q9',
+            type: 'multiple_choice',
             topic: 'ecuaciones',
             topicName: 'Ecuaciones con valor absoluto',
             question: 'Resuelva la ecuación \\(|3x - 2| = 7\\).',

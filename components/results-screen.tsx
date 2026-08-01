@@ -13,6 +13,7 @@ import confetti from 'canvas-confetti'
 import type { Answer } from '@/lib/types'
 import { QuizModeDialog } from './quiz-mode-dialog'
 import { ExplanationModal } from './explanation-modal'
+import { answerRecapLine } from './answer-recap'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 
@@ -62,12 +63,7 @@ export function ResultsScreen() {
             correctAnswers: results.correct,
             score: results.score,
             answers: answers.map(a => ({
-              questionId: a.questionId,
-              questionText: a.questionText,
-              options: a.options,
-              selectedAnswer: a.selectedAnswer,
-              correctAnswer: a.correctAnswer,
-              isCorrect: a.isCorrect,
+              ...a,
               explanation: a.explanation || '',
               topicName: a.topicName || ''
             }))
@@ -116,6 +112,7 @@ export function ResultsScreen() {
   const [isExplanationModalOpen, setIsExplanationModalOpen] = useState(false)
 
   const handleExplainError = useCallback(async (answer: Answer) => {
+    if (answer.type === 'short_answer') return
     setSelectedModalAnswer(answer)
     setIsExplanationModalOpen(true)
 
@@ -132,9 +129,9 @@ export function ResultsScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: answer.questionText,
-          selectedAnswer: answer.selectedAnswer,
-          correctAnswer: answer.correctAnswer,
-          options: answer.options,
+          questionType: answer.type,
+          selectedText: answerRecapLine(answer, 'selected'),
+          correctText: answerRecapLine(answer, 'correct'),
           topic: answer.topicName,
           subject: config?.subjectName,
           pedagogyContext: config?.pedagogyContext,
@@ -419,7 +416,7 @@ export function ResultsScreen() {
                   </div>
                   <div className="ml-8 p-2 bg-white rounded-lg border border-[var(--analysis)]/20">
                     <p className="text-sm text-[var(--analysis)] font-semibold">
-                      {String.fromCharCode(65 + answer.correctAnswer)}) <LaTeXRenderer content={answer.options[answer.correctAnswer]} />
+                      <LaTeXRenderer content={answerRecapLine(answer, 'correct')} />
                     </p>
                   </div>
                 </div>
@@ -455,12 +452,12 @@ export function ResultsScreen() {
                   <div className="ml-8 space-y-2">
                     <div className="p-2 bg-destructive/10 rounded-lg border border-destructive/20">
                       <p className="text-sm text-destructive font-semibold">
-                        Tu respuesta: {String.fromCharCode(65 + answer.selectedAnswer)}) <LaTeXRenderer content={answer.options[answer.selectedAnswer]} />
+                        Tu respuesta: <LaTeXRenderer content={answerRecapLine(answer, 'selected')} />
                       </p>
                     </div>
                     <div className="p-2 bg-[var(--analysis-light)] rounded-lg border border-[var(--analysis)]/20">
                       <p className="text-sm text-[var(--analysis)] font-semibold">
-                        Correcta: {String.fromCharCode(65 + answer.correctAnswer)}) <LaTeXRenderer content={answer.options[answer.correctAnswer]} />
+                        Correcta: <LaTeXRenderer content={answerRecapLine(answer, 'correct')} />
                       </p>
                     </div>
                   </div>
@@ -478,7 +475,7 @@ export function ResultsScreen() {
                   )}
 
                   {/* Explain Error Button */}
-                  {!explanations[answer.questionId] && (
+                  {!explanations[answer.questionId] && answer.type !== 'short_answer' && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -592,14 +589,15 @@ export function ResultsScreen() {
           open={isExplanationModalOpen}
           onClose={() => setIsExplanationModalOpen(false)}
           question={selectedModalAnswer.questionText}
-          userAnswer={`${String.fromCharCode(65 + selectedModalAnswer.selectedAnswer)}) ${selectedModalAnswer.options[selectedModalAnswer.selectedAnswer]}`}
-          correctAnswer={`${String.fromCharCode(65 + selectedModalAnswer.correctAnswer)}) ${selectedModalAnswer.options[selectedModalAnswer.correctAnswer]}`}
+          userAnswer={answerRecapLine(selectedModalAnswer, 'selected')}
+          correctAnswer={answerRecapLine(selectedModalAnswer, 'correct')}
           explanation={selectedModalExplanation || 'Cargando explicación con IA...'}
           topic={selectedModalAnswer.topic}
           topicName={selectedModalAnswer.topicName}
           subject={config?.subjectName}
           nivel={config?.nivel}
           grado={config?.grado}
+          allowRevancha={selectedModalAnswer.type === 'multiple_choice'}
         />
       )}
     </div>

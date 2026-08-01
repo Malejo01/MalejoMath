@@ -1,4 +1,4 @@
-// Types for Malejo Math Application
+// Types for MaestrIA Application
 
 export interface Subject {
   id: string
@@ -25,15 +25,48 @@ export interface Topic {
   completed: boolean
 }
 
-export interface Question {
+/**
+ * The set of question types the quiz engine, AI generation, and the Moodle
+ * GIFT exporter know how to handle. Adding a new type (essay, matching,
+ * ordering...) means: one new variant here, one new Zod schema in
+ * generate-quiz, one new case in components/quiz-answer-inputs, one new case
+ * in lib/moodle-export.ts's GIFT builder — no other file needs to change.
+ */
+export type QuestionType = 'multiple_choice' | 'short_answer' | 'true_false' | 'numeric'
+
+interface BaseQuestion {
   id: string
   topic: string
   topicName: string
   question: string
-  options: string[]
-  correctAnswer: number
   explanation: string
 }
+
+export interface MultipleChoiceQuestion extends BaseQuestion {
+  type: 'multiple_choice'
+  options: string[]
+  correctAnswer: number
+}
+
+export interface ShortAnswerQuestion extends BaseQuestion {
+  type: 'short_answer'
+  /** Accepted alternate phrasings; grading is AI-assisted, not exact match. */
+  acceptedAnswers: string[]
+}
+
+export interface TrueFalseQuestion extends BaseQuestion {
+  type: 'true_false'
+  correctAnswer: boolean
+}
+
+export interface NumericQuestion extends BaseQuestion {
+  type: 'numeric'
+  correctAnswer: number
+  /** Absolute tolerance for correctness; 0/omitted means exact match. */
+  tolerance?: number
+}
+
+export type Question = MultipleChoiceQuestion | ShortAnswerQuestion | TrueFalseQuestion | NumericQuestion
 
 export interface QuizConfig {
   subject: string
@@ -47,19 +80,46 @@ export interface QuizConfig {
   pedagogyContext?: string
   previewOnly?: boolean
   misconceptionContext?: string
+  /** Types to request from generate-quiz. Omit for multiple_choice-only (default, unchanged behavior). */
+  questionTypes?: QuestionType[]
 }
 
-export interface Answer {
+interface BaseAnswer {
   questionId: string
   questionText: string
-  options: string[]
-  selectedAnswer: number
-  correctAnswer: number
   isCorrect: boolean
   topic: string
   topicName: string
   explanation: string
 }
+
+export interface MultipleChoiceAnswer extends BaseAnswer {
+  type: 'multiple_choice'
+  options: string[]
+  selectedAnswer: number
+  correctAnswer: number
+}
+
+export interface ShortAnswerAnswer extends BaseAnswer {
+  type: 'short_answer'
+  selectedText: string
+  acceptedAnswers: string[]
+}
+
+export interface TrueFalseAnswer extends BaseAnswer {
+  type: 'true_false'
+  selectedAnswer: boolean
+  correctAnswer: boolean
+}
+
+export interface NumericAnswer extends BaseAnswer {
+  type: 'numeric'
+  selectedValue: number
+  correctAnswer: number
+  tolerance?: number
+}
+
+export type Answer = MultipleChoiceAnswer | ShortAnswerAnswer | TrueFalseAnswer | NumericAnswer
 
 export interface QuizResult {
   score: number
@@ -125,13 +185,23 @@ export interface TopicMastery {
   last_attempt_at: string
 }
 
+/**
+ * Shape returned by /api/quiz/attempt/[id] (a saved quiz_answers row).
+ * question_type defaults to 'multiple_choice' for rows written before
+ * migration 013. For multiple_choice, options/selected_answer/correct_answer
+ * are populated (legacy columns, still written for backward-compat reads);
+ * for any other type, answer_payload carries the type-specific fields
+ * (see lib/types.ts QuestionType doc comment for the shape per type).
+ */
 export interface AttemptAnswer {
   id: string
   question_id: string
   question_text: string
-  options: string[]
-  selected_answer: number
-  correct_answer: number
+  question_type: QuestionType
+  options?: string[]
+  selected_answer?: number
+  correct_answer?: number
+  answer_payload?: Record<string, unknown> | null
   is_correct: boolean
   explanation: string
   topic_name: string
