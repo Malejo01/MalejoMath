@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import * as dotenv from 'dotenv'
+import { DEFAULT_JURISDICTION } from '../lib/curriculum-config'
 
 dotenv.config({ path: '.env.local' })
 
@@ -43,7 +44,7 @@ async function run() {
     await sql`
       INSERT INTO curriculum (jurisdiccion, nivel, materia, grado, eje, temas)
       VALUES (
-        'Salta',
+        ${DEFAULT_JURISDICTION},
         'Secundario',
         'Espacio Institucional de Tutoría y Espacio de Apoyo',
         ${anio},
@@ -54,7 +55,7 @@ async function run() {
     await sql`
       INSERT INTO curriculum (jurisdiccion, nivel, materia, grado, eje, temas)
       VALUES (
-        'Salta',
+        ${DEFAULT_JURISDICTION},
         'Secundario',
         'Espacio Institucional de Tutoría y Espacio de Apoyo',
         ${anio},

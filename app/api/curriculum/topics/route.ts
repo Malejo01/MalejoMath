@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
+import { DEFAULT_JURISDICTION } from '@/lib/curriculum-config'
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/curriculum/topics?nivel=Secundario&grado=1er+Año&materia=Matemática
-// Returns all ejes with their temas for the given nivel+grado+materia.
+// GET /api/curriculum/topics?nivel=Secundario&grado=1er+Año&materia=Matemática&jurisdiccion=Salta
+// Returns all ejes with their temas for the given nivel+grado+materia(+jurisdiccion).
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const nivel   = searchParams.get('nivel')?.trim()
   const grado   = searchParams.get('grado')?.trim()
   const materia = searchParams.get('materia')?.trim()
+  const jurisdiccion = searchParams.get('jurisdiccion')?.trim() || DEFAULT_JURISDICTION
 
   if (!nivel || !grado || !materia) {
     return NextResponse.json({ error: 'Parámetros nivel, grado y materia requeridos' }, { status: 400 })
@@ -22,6 +24,7 @@ export async function GET(req: Request) {
       WHERE nivel   = ${nivel}
         AND grado   = ${grado}
         AND materia = ${materia}
+        AND jurisdiccion = ${jurisdiccion}
       ORDER BY id
     `
     // temas is stored as JSONB (string[]); cast for TS safety

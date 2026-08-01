@@ -10,6 +10,7 @@
 
 import { neon } from '@neondatabase/serverless'
 import * as dotenv from 'dotenv'
+import { DEFAULT_JURISDICTION } from '../lib/curriculum-config'
 
 dotenv.config({ path: '.env.local' })
 
@@ -253,7 +254,7 @@ async function seed() {
       await sql`
         INSERT INTO curriculum (jurisdiccion, nivel, materia, grado, eje, temas)
         VALUES (
-          ${entry.jurisdiccion ?? 'Salta'},
+          ${entry.jurisdiccion ?? DEFAULT_JURISDICTION},
           ${entry.nivel},
           ${entry.materia},
           ${entry.grado},
