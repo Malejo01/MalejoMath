@@ -75,21 +75,9 @@ const initialProgress: UserProgress = {
   streak: 0,
   lastAttemptDate: null,
   weakPoints: [],
-  subjectProgress: {
-    algebra: 0,
-    analisis: 0,
-    probabilidad: 0
-  },
-  subjectAverages: {
-    algebra: 0,
-    analisis: 0,
-    probabilidad: 0
-  },
-  subjectAttemptCounts: {
-    algebra: 0,
-    analisis: 0,
-    probabilidad: 0
-  },
+  subjectProgress: {},
+  subjectAverages: {},
+  subjectAttemptCounts: {},
   usedQuestionIds: []
 }
 
@@ -378,7 +366,7 @@ export const useAppStore = create<AppState>()(
       setTeacherSection: (section) => set({ teacherSection: section }),
     }),
     {
-      name: 'malejo-math-storage',
+      name: 'maestria-storage',
       partialize: (state) => ({ 
         userProgress: state.userProgress 
       }), // Solo persistir el progreso del usuario, NO el quiz actual

@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/dialog'
 import { useAppStore } from '@/lib/store'
 import type { WeakPoint } from '@/lib/types'
-import { subjects } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { QuizModeDialog } from './quiz-mode-dialog'
 
@@ -29,29 +28,10 @@ export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakP
   const [practiceModalSubjectId, setPracticeModalSubjectId] = useState<string | null>(null)
   const [activeSubjectModal, setActiveSubjectModal] = useState<string | null>(null)
 
-  const getTopicName = (topicId: string): string => {
-    for (const subject of subjects) {
-      for (const unit of subject.units) {
-        const topic = unit.topics.find(t => t.id === topicId)
-        if (topic) return topic.name
-      }
-    }
-    return topicId
-  }
-
-  const getSubjectName = (subjectId: string): string => {
-    const subject = subjects.find(s => s.id === subjectId)
-    return subject?.name || subjectId
-  }
-
   const handlePractice = async (subjectId: string, points: WeakPoint[], mode: 'teorico' | 'practico' | 'mixto') => {
     if (!points || points.length === 0) return
 
-    const matchedSubject = subjects.find(
-      (item) => item.id === subjectId || item.name.toLowerCase() === subjectId.toLowerCase()
-    )
-    const subjectName = matchedSubject?.name || subjectId
-    const targetSubjectId = matchedSubject?.id || subjectId
+    const subjectName = subjectId
 
     const firstPoint = points[0]
     const targetNivel = firstPoint.nivel || currentQuiz.config?.nivel || userProfile?.nivel || 'Primario'
@@ -63,7 +43,7 @@ export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakP
 
     const topics = points.map((point) => ({
       id: point.topic,
-      name: point.topicName || getTopicName(point.topic)
+      name: point.topicName || point.topic
     }))
 
     const misconceptionContext = isMicroQuiz && firstPoint.misconceptionType
@@ -97,7 +77,7 @@ export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakP
       if (data.questions && data.questions.length > 0) {
         startQuiz(
           {
-            subject: targetSubjectId,
+            subject: subjectId,
             subjectName: subjectName,
             nivel: targetNivel,
             grado: targetGrado,
@@ -165,7 +145,7 @@ export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakP
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className="font-bold text-foreground text-sm group-hover:text-orange-600 transition-colors">
-                      {getSubjectName(subjectId)}
+                      {subjectId}
                     </h4>
                     {firstGrado && (
                       <span className="px-2 py-0.5 rounded-md bg-orange-200/60 dark:bg-orange-950 text-orange-800 dark:text-orange-300 text-[10px] font-bold">
@@ -208,7 +188,7 @@ export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakP
                   <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 shrink-0">
                     <Target className="w-5 h-5" />
                   </div>
-                  <span>Temas a reforzar — {getSubjectName(subjectId)}</span>
+                  <span>Temas a reforzar — {subjectId}</span>
                   {firstGrado && (
                     <span className="px-2.5 py-0.5 rounded-lg bg-orange-500/15 text-orange-600 text-xs font-extrabold ml-1">
                       {firstGrado}
@@ -248,7 +228,7 @@ export function WeakPointsSection({ weakPoints, variant = 'full', limit }: WeakP
                         <div>
                           <div className="flex items-center gap-2">
                             <h5 className="font-bold text-sm text-foreground">
-                              {wp.topicName || getTopicName(wp.topic)}
+                              {wp.topicName || wp.topic}
                             </h5>
                             {wp.grado && (
                               <span className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 text-[10px] font-bold">
