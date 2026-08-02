@@ -8,6 +8,8 @@ import { teacherProgramToSubject } from '@/lib/teacher-programs'
 import { SUBJECT_COLOR_CLASS } from '@/lib/subject-appearance'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertDialog,
@@ -34,6 +36,7 @@ import {
   GraduationCap,
   AlertTriangle,
   Users,
+  FilePlus,
 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { TeacherSubjectWizard } from '@/components/teacher-subject-wizard'
@@ -102,6 +105,12 @@ function normalizeTeacherQuiz(quiz: Record<string, unknown>): TeacherQuiz {
   }
 }
 
+const ASSESSMENT_STYLE_LABELS: Record<string, string> = {
+  teorico: 'Teórico',
+  practico: 'Práctico',
+  mixto: 'Mixto',
+}
+
 export default function TeacherPage() {
   const {
     userProfile,
@@ -132,6 +141,7 @@ export default function TeacherPage() {
   const [showCreateWizard, setShowCreateWizard] = useState(false)
   const [showEditWizard, setShowEditWizard] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showOnlyMySubjects, setShowOnlyMySubjects] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [quizSubjectFilter, setQuizSubjectFilter] = useState<string>('all')
@@ -315,7 +325,12 @@ export default function TeacherPage() {
     }
   }, [teacherPrograms.length, updateMySubjectsScrollState])
 
-  const renderTeacherProgramCard = (program: TeacherProgram) => {
+  /**
+   * `showCreateQuizAction` is on inside "Mis materias": starting a quiz used to
+   * mean jumping to a separate section and picking the materia all over again,
+   * so the action now lives on the materia itself.
+   */
+  const renderTeacherProgramCard = (program: TeacherProgram, { showCreateQuizAction = false } = {}) => {
     const subjectId = `teacher-${program.id}`
     const isSelected = activeSubject === subjectId
     const Icon = SUBJECT_ICON_COMPONENTS[program.iconName] ?? BookOpen
@@ -329,6 +344,10 @@ export default function TeacherPage() {
         key={program.id}
         className={`relative w-full p-4 pt-6 min-h-[170px] border-2 cursor-pointer transition-all ${isSelected ? 'border-primary shadow-md bg-primary/5' : 'border-border hover:border-primary/40'}`}
         onClick={() => handleSubjectChange(subjectId)}
+        onDoubleClick={() => {
+          handleSubjectChange(subjectId)
+          setShowDetailDialog(true)
+        }}
       >
         <button
           type="button"
@@ -381,6 +400,21 @@ export default function TeacherPage() {
             </p>
           )}
           <p className="text-xs text-muted-foreground">{program.units.length} unidades</p>
+
+          {showCreateQuizAction && (
+            <Button
+              size="sm"
+              className="mt-1 w-full rounded-xl font-bold text-xs"
+              onClick={(event) => {
+                event.stopPropagation()
+                handleSubjectChange(subjectId)
+                setTeacherSection('crear')
+              }}
+            >
+              <FilePlus className="w-3.5 h-3.5 mr-1.5" />
+              Crear cuestionario
+            </Button>
+          )}
         </div>
       </Card>
     )
@@ -588,7 +622,7 @@ export default function TeacherPage() {
                 <p className="text-sm text-muted-foreground">Todavia no cargaste materias propias.</p>
               )}
               <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
-                {teacherPrograms.map((program) => renderTeacherProgramCard(program))}
+                {teacherPrograms.map((program) => renderTeacherProgramCard(program, { showCreateQuizAction: true }))}
               </div>
             </div>
           </Card>
@@ -596,30 +630,48 @@ export default function TeacherPage() {
 
         {teacherSection === 'crear' && (
           <Card className="p-4 rounded-2xl border border-border/60 bg-card/75 backdrop-blur-md shadow-[0_6px_30px_rgba(23,23,23,0.06)] space-y-4">
-            <div className="space-y-3">
-              <h2 className="text-lg font-bold">Paso 1: Selecciona una materia</h2>
-              <p className="text-sm text-muted-foreground">Elige una de tus materias para comenzar a crear el cuestionario.</p>
+            {/* Arriving from a materia's own "Crear cuestionario" button means
+                the materia is already picked — showing the picker again would
+                be the extra step this was meant to remove. */}
+            {!selectedSubject && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold">Selecciona una materia</h2>
+                <p className="text-sm text-muted-foreground">Elige una de tus materias para comenzar a crear el cuestionario.</p>
 
-              {teacherPrograms.length === 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Todavia no cargaste materias propias.</p>
-                  <Button onClick={() => setShowCreateWizard(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Crear materia
-                  </Button>
-                </div>
-              )}
+                {teacherPrograms.length === 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Todavia no cargaste materias propias.</p>
+                    <Button onClick={() => setShowCreateWizard(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Crear materia
+                    </Button>
+                  </div>
+                )}
 
-              {teacherPrograms.length > 0 && (
-                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
-                  {teacherPrograms.map((program) => renderTeacherProgramCard(program))}
-                </div>
-              )}
-            </div>
+                {teacherPrograms.length > 0 && (
+                  <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
+                    {teacherPrograms.map((program) => renderTeacherProgramCard(program))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {selectedSubject && (
-              <div className="space-y-3 border-t pt-4">
-                <h2 className="text-lg font-bold">Paso 2: Elegir temas para el cuestionario</h2>
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold truncate">Cuestionario de {selectedSubject.name}</h2>
+                    <p className="text-sm text-muted-foreground">Elegí los temas que va a cubrir.</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => handleSubjectChange(null)}
+                  >
+                    Cambiar materia
+                  </Button>
+                </div>
                 <SubjectContent subject={selectedSubject} />
               </div>
             )}
@@ -760,6 +812,86 @@ export default function TeacherPage() {
           setTeacherSection('aulas')
         }}
       />
+
+      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {activeTeacherProgram && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{activeTeacherProgram.subjectName}</DialogTitle>
+                <DialogDescription>
+                  {activeTeacherProgram.nivel ?? 'Sin nivel'} · {activeTeacherProgram.grado ?? 'Sin año'}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div className="grid sm:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-xl border p-3">
+                    <p className="text-xs text-muted-foreground">Complejidad</p>
+                    <p className="font-semibold">{activeTeacherProgram.pedagogyProfile.complexity || 'No especificado'}</p>
+                  </div>
+                  <div className="rounded-xl border p-3">
+                    <p className="text-xs text-muted-foreground">Enfoque</p>
+                    <p className="font-semibold">
+                      {ASSESSMENT_STYLE_LABELS[activeTeacherProgram.pedagogyProfile.assessmentStyle] ||
+                        activeTeacherProgram.pedagogyProfile.assessmentStyle ||
+                        'No especificado'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border p-3">
+                    <p className="text-xs text-muted-foreground">Unidades</p>
+                    <p className="font-semibold">{activeTeacherProgram.units.length} unidades</p>
+                  </div>
+                </div>
+
+                {activeTeacherProgram.pedagogyProfile.methodology && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground">Metodología de enseñanza</p>
+                    <p className="text-sm">{activeTeacherProgram.pedagogyProfile.methodology}</p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Temario completo</p>
+                  {activeTeacherProgram.units.map((unit, index) => (
+                    <div key={unit.id} className="rounded-xl border p-3 space-y-2">
+                      <p className="font-semibold text-sm">
+                        {index + 1}. {unit.name}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {unit.topics.map((topic) => (
+                          <Badge key={topic.id} variant={topic.origin === 'curriculum' ? 'secondary' : 'outline'} className="text-xs">
+                            {topic.name}
+                          </Badge>
+                        ))}
+                        {unit.topics.length === 0 && (
+                          <p className="text-xs text-muted-foreground">Sin temas.</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {activeTeacherProgram.units.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Esta materia todavía no tiene unidades cargadas.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDetailDialog(false)
+                    setShowEditWizard(true)
+                  }}
+                >
+                  Editar materia
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>

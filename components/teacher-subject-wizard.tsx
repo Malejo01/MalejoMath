@@ -60,9 +60,9 @@ const STEPS: { id: StepId; label: string }[] = [
 ]
 
 /**
- * Prefilled so a teacher who just wants the topics can save without writing
- * pedagogy prose. These feed the AI prompt (pedagogyProfileToContext), so a
- * sensible default beats an empty string.
+ * The methodology used to ship prefilled with a generic sentence, so every
+ * materia ended up telling the AI the same thing and no teacher ever noticed
+ * the field. It is now asked for explicitly — see LEGACY_DEFAULT_METHODOLOGY.
  */
 const DEFAULT_PEDAGOGY: PedagogyProfile = {
   level: '',
@@ -70,8 +70,21 @@ const DEFAULT_PEDAGOGY: PedagogyProfile = {
   academicYear: '',
   complexity: 'Intermedia',
   assessmentStyle: 'mixto',
-  methodology: 'Práctica guiada con ejercicios resueltos paso a paso y consignas de dificultad creciente.',
+  methodology: '',
 }
+
+/**
+ * Sentences that landed in `methodology` because something filled the field in,
+ * not because a teacher wrote them: the old wizard default, and the stub the
+ * quiz flow writes when it auto-creates a materia. Opening such a materia for
+ * editing blanks the field so the teacher gets asked, instead of silently
+ * confirming — and feeding the AI — a text they never chose.
+ */
+const AUTOFILLED_METHODOLOGIES = new Set([
+  'práctica guiada con ejercicios resueltos paso a paso y consignas de dificultad creciente.',
+  'generado desde currícula oficial',
+  'generado desde curricula oficial',
+])
 
 const COMPLEXITY_OPTIONS = ['Básica', 'Intermedia', 'Avanzada']
 
@@ -95,13 +108,58 @@ export function TeacherSubjectWizard({
   const { toast } = useToast()
   const isEditing = Boolean(programToEdit)
 
-  // Monotonic counter for generated ids — stable within a wizard session and
-  // collision-free even when several units are added in the same millisecond.
+  // Generated ids must be unique against the ids the loaded materia ALREADY
+  // carries. The counter used to restart at 0 on every open, so editing a
+  // materia whose topics were saved as t-1, t-2… and then adding a topic
+  // minted t-1 again: React reported "two children with the same key" and,
+  // worse, could reconcile the wrong topic. Keeping the set of ids in play and
+  // skipping over any collision makes that impossible by construction.
   const idCounter = useRef(0)
+  const usedIds = useRef<Set<string>>(new Set())
   const nextId = useCallback((prefix: string) => {
-    idCounter.current += 1
-    return `${prefix}-${idCounter.current}`
+    let candidate: string
+    do {
+      idCounter.current += 1
+      candidate = `${prefix}-${idCounter.current}`
+    } while (usedIds.current.has(candidate))
+    usedIds.current.add(candidate)
+    return candidate
   }, [])
+
+  /**
+   * Takes the units of a materia being edited and hands back the same units
+   * with guaranteed-unique ids, re-minting only the ones that are missing or
+   * already taken. This also repairs materias that were saved back when the
+   * counter collided, so an existing duplicate does not survive the round trip.
+   */
+  const adoptUnits = useCallback((loaded: ProgramUnit[]): ProgramUnit[] => {
+    const seen = new Set<string>()
+    const claim = (id: string | undefined) => {
+      if (!id || seen.has(id)) return false
+      seen.add(id)
+      return true
+    }
+
+    // First pass claims every id that is free, so the second pass cannot mint
+    // an id that a later unit or topic legitimately owns.
+    const decided = loaded.map((unit) => ({
+      unit,
+      keepUnitId: claim(unit.id),
+      keepTopicIds: (unit.topics ?? []).map((topic) => claim(topic.id)),
+    }))
+
+    usedIds.current = seen
+    idCounter.current = 0
+
+    return decided.map(({ unit, keepUnitId, keepTopicIds }) => ({
+      ...unit,
+      id: keepUnitId ? unit.id : nextId('u'),
+      topics: (unit.topics ?? []).map((topic, index) => ({
+        ...topic,
+        id: keepTopicIds[index] ? topic.id : nextId('t'),
+      })),
+    }))
+  }, [nextId])
 
   const [step, setStep] = useState<StepId>(1)
 
@@ -127,12 +185,15 @@ export function TeacherSubjectWizard({
   const [customTopicDraft, setCustomTopicDraft] = useState<Record<string, string>>({})
   const [showFileImport, setShowFileImport] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  // Two collapsible ways to grow "Tu temario": start open on curriculum since
+  // most teachers begin from the official design, closed on custom since it's
+  // only needed once they diverge from it.
+  const [showCurriculumSection, setShowCurriculumSection] = useState(true)
+  const [showCustomSection, setShowCustomSection] = useState(false)
 
   // ─── Load / reset when the dialog opens ────────────────────────────────────
   useEffect(() => {
     if (!open) return
-
-    idCounter.current = 0
 
     if (programToEdit) {
       setNivel(programToEdit.nivel ?? null)
@@ -140,8 +201,12 @@ export function TeacherSubjectWizard({
       setSubjectName(programToEdit.subjectName)
       setIconName(programToEdit.iconName)
       setColorName(programToEdit.colorName)
-      setUnits(Array.isArray(programToEdit.units) ? programToEdit.units : [])
-      setPedagogy({ ...DEFAULT_PEDAGOGY, ...programToEdit.pedagogyProfile })
+      setUnits(adoptUnits(Array.isArray(programToEdit.units) ? programToEdit.units : []))
+      const loadedPedagogy = { ...DEFAULT_PEDAGOGY, ...programToEdit.pedagogyProfile }
+      if (AUTOFILLED_METHODOLOGIES.has(normalizeTopicKey(loadedPedagogy.methodology ?? ''))) {
+        loadedPedagogy.methodology = ''
+      }
+      setPedagogy(loadedPedagogy)
       // Programs from before migration 014 have no nivel/grado: start on step 1
       // so the teacher fills the gap, otherwise jump straight to the topics.
       setStep(programToEdit.nivel && programToEdit.grado ? 3 : 1)
@@ -152,6 +217,8 @@ export function TeacherSubjectWizard({
       setSubjectName('')
       setIconName('book-open')
       setColorName('teal')
+      usedIds.current = new Set()
+      idCounter.current = 0
       setUnits([])
       setPedagogy(DEFAULT_PEDAGOGY)
       setStep(1)
@@ -164,7 +231,9 @@ export function TeacherSubjectWizard({
     setShowFileImport(false)
     setTopicSearch('')
     setCollapsedAxes([])
-  }, [open, programToEdit])
+    setShowCurriculumSection(true)
+    setShowCustomSection(false)
+  }, [open, programToEdit, adoptUnits])
 
   // ─── Curriculum lookups ────────────────────────────────────────────────────
   useEffect(() => {
@@ -406,7 +475,7 @@ export function TeacherSubjectWizard({
           : !pedagogy.complexity.trim()
             ? 'Elegí la complejidad.'
             : !pedagogy.methodology.trim()
-              ? 'Describí brevemente la metodología.'
+              ? 'Contanos tu metodología de enseñanza: es lo que hace que los cuestionarios se parezcan a tus clases.'
               : null,
     }
   }, [nivel, grado, subjectName, units, pedagogy])
@@ -634,12 +703,18 @@ export function TeacherSubjectWizard({
                   type="button"
                   size="sm"
                   variant={normalizeTopicKey(subjectName) === normalizeTopicKey(materia) ? 'default' : 'outline'}
+                  className="max-w-full"
+                  title={materia}
                   onClick={() => {
                     setSubjectName(materia)
                     setBrowseMateria(materia)
                   }}
                 >
-                  {materia}
+                  {/* Names like "Espacio Institucional de Tutoría y Espacios
+                      de Definición Institucional" are longer than the card:
+                      Button is whitespace-nowrap, so without min-w-0 + truncate
+                      the chip spills past the border instead of shrinking. */}
+                  <span className="min-w-0 truncate">{materia}</span>
                 </Button>
               ))}
             </div>
@@ -702,152 +777,211 @@ export function TeacherSubjectWizard({
     </div>
   )
 
-  const renderCurriculumPanel = () => (
-    <Card className="p-4 space-y-3 flex flex-col min-h-0">
-      <div>
-        <h3 className="font-semibold text-sm">Diseño curricular</h3>
-        <p className="text-xs text-muted-foreground">
-          {nivel} · {grado} · {DEFAULT_JURISDICTION}
-        </p>
-      </div>
-
-      {curriculumSubjects.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {curriculumSubjects.map((materia) => (
-            <Button
-              key={materia}
-              type="button"
-              size="sm"
-              variant={browseMateria === materia ? 'default' : 'outline'}
-              className="h-7 text-xs"
-              onClick={() => setBrowseMateria(materia)}
-            >
-              {materia}
-            </Button>
-          ))}
-        </div>
-      )}
-
-      {curriculumSubjects.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No hay materias cargadas para {nivel} · {grado}. Podés armar el temario con tus propios temas en el panel de
-          la derecha o importarlo desde un archivo.
-        </p>
-      )}
-
-      {browseMateria && (
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar tema..."
-            value={topicSearch}
-            onChange={(event) => setTopicSearch(event.target.value)}
-            className="pl-8 h-9"
-          />
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-[46vh] pr-1">
-        {isLoadingAxes && (
-          <p className="text-sm text-muted-foreground flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Cargando temas...
+  const renderCurriculumSection = () => (
+    <Card className="p-4 space-y-3">
+      <button
+        type="button"
+        className="flex items-center gap-2 w-full text-left"
+        onClick={() => setShowCurriculumSection((prev) => !prev)}
+      >
+        {showCurriculumSection ? (
+          <ChevronDown className="w-4 h-4 shrink-0" />
+        ) : (
+          <ChevronRight className="w-4 h-4 shrink-0" />
+        )}
+        <div className="min-w-0">
+          <h3 className="font-semibold text-sm">Seleccionar del diseño curricular</h3>
+          <p className="text-xs text-muted-foreground truncate">
+            {nivel} · {grado} · {DEFAULT_JURISDICTION}
           </p>
+        </div>
+      </button>
+
+      {showCurriculumSection && (
+        <div className="space-y-3">
+          {curriculumSubjects.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {curriculumSubjects.map((materia) => (
+                <Button
+                  key={materia}
+                  type="button"
+                  size="sm"
+                  variant={browseMateria === materia ? 'default' : 'outline'}
+                  className="h-7 text-xs max-w-full"
+                  title={materia}
+                  onClick={() => setBrowseMateria(materia)}
+                >
+                  <span className="min-w-0 truncate">{materia}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {curriculumSubjects.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No hay materias cargadas para {nivel} · {grado}. Podés armar el temario con tus propios temas en
+              &quot;Agregar temas personalizados&quot; o importarlo desde un archivo.
+            </p>
+          )}
+
+          {browseMateria && (
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar tema..."
+                value={topicSearch}
+                onChange={(event) => setTopicSearch(event.target.value)}
+                className="pl-8 h-9"
+              />
+            </div>
+          )}
+
+          <div className="overflow-y-auto space-y-2 max-h-[40vh] pr-1">
+            {isLoadingAxes && (
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Cargando temas...
+              </p>
+            )}
+
+            {!isLoadingAxes && browseMateria && filteredAxes.length === 0 && (
+              <p className="text-sm text-muted-foreground">No se encontraron temas para esa búsqueda.</p>
+            )}
+
+            {!isLoadingAxes &&
+              filteredAxes.map((axis) => {
+                const isCollapsed = collapsedAxes.includes(axis.eje)
+                const pendingCount = axis.temas.filter((tema) => !addedTopicKeys.has(normalizeTopicKey(tema))).length
+
+                return (
+                  <div key={axis.eje} className="border rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-1 bg-muted/50 px-2 py-1.5">
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+                        onClick={() =>
+                          setCollapsedAxes((prev) =>
+                            prev.includes(axis.eje) ? prev.filter((item) => item !== axis.eje) : [...prev, axis.eje]
+                          )
+                        }
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 shrink-0" />
+                        )}
+                        <span className="text-xs font-semibold truncate">{axis.eje}</span>
+                        <span className="text-[11px] text-muted-foreground shrink-0">({axis.temas.length})</span>
+                      </button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-[11px] px-2 shrink-0"
+                        onClick={() => addAxisAsUnit(axis)}
+                        disabled={pendingCount === 0}
+                        title={`Crear una unidad con todos los temas de ${axis.eje}`}
+                        aria-label={`Crear una unidad con todos los temas de ${axis.eje}`}
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Todo el eje
+                      </Button>
+                    </div>
+
+                    {!isCollapsed && (
+                      <ul className="divide-y">
+                        {axis.temas.map((tema) => {
+                          const isAdded = addedTopicKeys.has(normalizeTopicKey(tema))
+                          return (
+                            <li key={tema} className="flex items-center gap-2 px-2 py-1.5">
+                              <span className={`text-xs flex-1 ${isAdded ? 'text-muted-foreground line-through' : ''}`}>
+                                {tema}
+                              </span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={isAdded ? 'ghost' : 'outline'}
+                                className="h-7 px-2 shrink-0"
+                                disabled={isAdded}
+                                onClick={() => addCurriculumTopic(tema, axis.eje)}
+                                aria-label={isAdded ? `${tema} ya está en tu temario` : `Agregar ${tema}`}
+                              >
+                                {isAdded ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                              </Button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+
+  const renderCustomTopicsSection = () => (
+    <Card className="p-4 space-y-3">
+      <button
+        type="button"
+        className="flex items-center gap-2 w-full text-left"
+        onClick={() => setShowCustomSection((prev) => !prev)}
+      >
+        {showCustomSection ? (
+          <ChevronDown className="w-4 h-4 shrink-0" />
+        ) : (
+          <ChevronRight className="w-4 h-4 shrink-0" />
         )}
+        <div className="min-w-0">
+          <h3 className="font-semibold text-sm">Agregar temas personalizados</h3>
+          <p className="text-xs text-muted-foreground">Creá una unidad a mano o importá un archivo</p>
+        </div>
+      </button>
 
-        {!isLoadingAxes && browseMateria && filteredAxes.length === 0 && (
-          <p className="text-sm text-muted-foreground">No se encontraron temas para esa búsqueda.</p>
-        )}
+      {showCustomSection && (
+        <div className="space-y-3">
+          <Button type="button" size="sm" variant="secondary" onClick={addEmptyUnit}>
+            <Plus className="w-4 h-4 mr-1" />
+            Unidad nueva
+          </Button>
 
-        {!isLoadingAxes &&
-          filteredAxes.map((axis) => {
-            const isCollapsed = collapsedAxes.includes(axis.eje)
-            const pendingCount = axis.temas.filter((tema) => !addedTopicKeys.has(normalizeTopicKey(tema))).length
-
-            return (
-              <div key={axis.eje} className="border rounded-lg overflow-hidden">
-                <div className="flex items-center gap-1 bg-muted/50 px-2 py-1.5">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
-                    onClick={() =>
-                      setCollapsedAxes((prev) =>
-                        prev.includes(axis.eje) ? prev.filter((item) => item !== axis.eje) : [...prev, axis.eje]
-                      )
-                    }
-                  >
-                    {isCollapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
-                    <span className="text-xs font-semibold truncate">{axis.eje}</span>
-                    <span className="text-[11px] text-muted-foreground shrink-0">({axis.temas.length})</span>
-                  </button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-[11px] px-2 shrink-0"
-                    onClick={() => addAxisAsUnit(axis)}
-                    disabled={pendingCount === 0}
-                    title={`Crear una unidad con todos los temas de ${axis.eje}`}
-                    aria-label={`Crear una unidad con todos los temas de ${axis.eje}`}
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Todo el eje
-                  </Button>
-                </div>
-
-                {!isCollapsed && (
-                  <ul className="divide-y">
-                    {axis.temas.map((tema) => {
-                      const isAdded = addedTopicKeys.has(normalizeTopicKey(tema))
-                      return (
-                        <li key={tema} className="flex items-center gap-2 px-2 py-1.5">
-                          <span className={`text-xs flex-1 ${isAdded ? 'text-muted-foreground line-through' : ''}`}>
-                            {tema}
-                          </span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={isAdded ? 'ghost' : 'outline'}
-                            className="h-7 px-2 shrink-0"
-                            disabled={isAdded}
-                            onClick={() => addCurriculumTopic(tema, axis.eje)}
-                            aria-label={isAdded ? `${tema} ya está en tu temario` : `Agregar ${tema}`}
-                          >
-                            {isAdded ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                          </Button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
+          <div className="border-t pt-3">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowFileImport((prev) => !prev)}>
+              <Upload className="w-4 h-4 mr-2" />
+              {showFileImport ? 'Ocultar importación desde archivo' : 'Importar desde un archivo (PDF, Word)'}
+            </Button>
+            {showFileImport && (
+              <div className="pt-2">
+                <p className="text-xs text-muted-foreground pb-2">
+                  Las unidades que encuentre la IA se agregan a tu temario, no lo reemplazan.
+                </p>
+                <ProgramFileImport onUnitsSuggested={mergeSuggestedUnits} onSourceMetaChange={setSourceMeta} />
               </div>
-            )
-          })}
-      </div>
+            )}
+          </div>
+        </div>
+      )}
     </Card>
   )
 
   const renderUnitsPanel = () => (
-    <Card className="p-4 space-y-3 flex flex-col min-h-0">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h3 className="font-semibold text-sm">Tu temario</h3>
-          <p className="text-xs text-muted-foreground">
-            {units.length} unidades · {topicCount} temas
-          </p>
-        </div>
-        <Button type="button" size="sm" variant="secondary" onClick={addEmptyUnit}>
-          <Plus className="w-4 h-4 mr-1" />
-          Unidad
-        </Button>
+    <Card className="p-4 space-y-3">
+      <div>
+        <h3 className="font-semibold text-sm">Tu temario</h3>
+        <p className="text-xs text-muted-foreground">
+          {units.length} unidades · {topicCount} temas
+        </p>
       </div>
 
       {units.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          Creá una unidad y después agregá temas desde el diseño curricular o escribí los tuyos.
+          Todavía no armaste unidades. Abrí &quot;Seleccionar del diseño curricular&quot; o &quot;Agregar temas
+          personalizados&quot; para empezar.
         </p>
       )}
 
-      <div className="flex-1 overflow-y-auto space-y-3 min-h-0 max-h-[46vh] pr-1">
+      <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
         {units.map((unit, unitIndex) => {
           const isActive = activeUnitId === unit.id || (!activeUnitId && unitIndex === 0)
 
@@ -916,8 +1050,10 @@ export function TeacherSubjectWizard({
 
               <ul className="space-y-1 pl-6">
                 {unit.topics.map((topic) => (
-                  <li key={topic.id} className="flex items-center gap-1.5">
-                    <span className="text-xs flex-1">{topic.name}</span>
+                  <li key={topic.id} className="flex items-start gap-1.5">
+                    {/* min-w-0 lets the name wrap instead of pushing the badge
+                        and the delete button past the right edge of the card. */}
+                    <span className="text-xs flex-1 min-w-0 break-words">{topic.name}</span>
                     {topic.origin === 'curriculum' ? (
                       <Badge variant="secondary" className="h-5 text-[10px] px-1.5 shrink-0" title={topic.sourceEje}>
                         Currículum
@@ -968,21 +1104,6 @@ export function TeacherSubjectWizard({
           )
         })}
       </div>
-
-      <div className="border-t pt-2">
-        <Button type="button" variant="ghost" size="sm" onClick={() => setShowFileImport((prev) => !prev)}>
-          <Upload className="w-4 h-4 mr-2" />
-          {showFileImport ? 'Ocultar importación desde archivo' : 'Importar desde un archivo (PDF, Word)'}
-        </Button>
-        {showFileImport && (
-          <div className="pt-2">
-            <p className="text-xs text-muted-foreground pb-2">
-              Las unidades que encuentre la IA se agregan a tu temario, no lo reemplazan.
-            </p>
-            <ProgramFileImport onUnitsSuggested={mergeSuggestedUnits} onSourceMetaChange={setSourceMeta} />
-          </div>
-        )}
-      </div>
     </Card>
   )
 
@@ -1004,46 +1125,58 @@ export function TeacherSubjectWizard({
       )}
 
       <div className="grid sm:grid-cols-2 gap-4">
-        <div className="space-y-1">
+        <div className="space-y-2">
           <Label>Complejidad</Label>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {COMPLEXITY_OPTIONS.map((option) => (
-              <Button
+              <button
                 key={option}
                 type="button"
-                size="sm"
-                variant={pedagogy.complexity === option ? 'default' : 'outline'}
                 onClick={() => setPedagogy((prev) => ({ ...prev, complexity: option }))}
+                className={`p-3 rounded-xl border text-sm font-semibold transition-all ${
+                  pedagogy.complexity === option
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                }`}
               >
                 {option}
-              </Button>
+              </button>
             ))}
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-2">
           <Label>Enfoque</Label>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {ASSESSMENT_OPTIONS.map((option) => (
-              <Button
+              <button
                 key={option.value}
                 type="button"
-                size="sm"
-                variant={pedagogy.assessmentStyle === option.value ? 'default' : 'outline'}
                 onClick={() => setPedagogy((prev) => ({ ...prev, assessmentStyle: option.value }))}
+                className={`p-3 rounded-xl border text-sm font-semibold transition-all ${
+                  pedagogy.assessmentStyle === option.value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                }`}
               >
                 {option.label}
-              </Button>
+              </button>
             ))}
           </div>
         </div>
       </div>
 
       <div className="space-y-1">
-        <Label>Metodología de enseñanza</Label>
+        <Label htmlFor="wizard-methodology">Tu metodología de enseñanza</Label>
+        <p className="text-xs text-muted-foreground">
+          Contanos cómo te gusta enseñar esta materia. Lo tenemos en cuenta al generar los
+          cuestionarios, así se parecen a tus clases y no a un examen genérico.
+        </p>
         <Textarea
+          id="wizard-methodology"
           rows={3}
           value={pedagogy.methodology}
+          placeholder="Ej: Arranco con un problema de la vida real, resolvemos juntos un ejemplo en el pizarrón y recién después practican solos con dificultad creciente."
           onChange={(event) => setPedagogy((prev) => ({ ...prev, methodology: event.target.value }))}
         />
       </div>
@@ -1108,9 +1241,12 @@ export function TeacherSubjectWizard({
           {step === 1 && renderStepOne()}
           {step === 2 && renderStepTwo()}
           {step === 3 && (
-            <div className="grid lg:grid-cols-2 gap-4">
-              {renderCurriculumPanel()}
+            <div className="space-y-4">
               {renderUnitsPanel()}
+              <div className="space-y-3">
+                {renderCurriculumSection()}
+                {renderCustomTopicsSection()}
+              </div>
             </div>
           )}
           {step === 4 && renderStepFour()}
