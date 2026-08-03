@@ -24,9 +24,7 @@ En Neon el PITR **no es un interruptor**: toda branch tiene una ventana de histo
 - Consola: *Project* → *Settings* → *Storage* → history retention.
 - API: `GET /api/v2/projects/noisy-smoke-23995229` → campo `history_retention_seconds`.
 
-> **Anotá acá el valor real cuando lo verifiques:** `history_retention_seconds = ______` (verificado el ____/____/____).
->
-> El plan Free da una ventana de horas; los pagos, de días. Ese número es el que define la fila "Alcance temporal" de la tabla de arriba — sin él, la columna del PITR es una promesa sin plazo.
+> **Anotá acá el valor real cuando lo verifiques:** History window: 6h (Free Plan, máximo disponible). PITR solo cubre el mismo día — todo lo anterior depende exclusivamente del dump diario a Vercel Blob.
 
 ---
 
