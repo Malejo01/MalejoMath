@@ -1,60 +1,63 @@
 # Deuda técnica
 
-Diagnóstico al **2026-08-03**, sobre `feat/ai-usage-and-db-guardrails` (commit `a285bea`).
-Medido con `npx tsc --noEmit` y `npm audit`. **Nada de lo que sigue está arreglado**:
-este documento es el relevamiento, no el changelog.
+Relevado el **2026-08-03** sobre `feat/ai-usage-and-db-guardrails`, actualizado en el
+mismo día tras resolver la primera tanda. Medido con `npx tsc --noEmit` y `npm audit`.
 
 Versiones al momento de medir: `next@16.2.4`, `next-auth@5.0.0-beta.31`,
 `postcss@8.5.14`, `typescript@5.7.3`.
+
+**Estado: 5 errores de TypeScript pendientes (eran 31) y 6 vulnerabilidades de npm audit,
+ninguna resuelta todavía.**
+
+---
+
+## Ya resuelto
+
+| Commit | Qué |
+|---|---|
+| `b4917c8` | `tsconfig.tsbuildinfo` fuera del control de versiones (ignorado por glob `*.tsbuildinfo`) |
+| `a285bea` | Tests del fail-closed de `resolveDbTarget` |
+| `cff5453` | `pnpm-lock.yaml` y `test-export.ts` borrados; `packageManager: npm@10.9.8` declarado |
+| `dcaece1` | `lib/moodle-export-no-imports.ts` borrado + tipos de Sentry alineados — **31 → 5 errores** |
+
+Detalle de lo que se cerró en `dcaece1`, porque el razonamiento sigue siendo útil:
+
+- **`lib/moodle-export-no-imports.ts` (14 errores).** Archivo muerto: no lo importaba
+  nadie. Era la copia que generó v0 para un sandbox sin resolución de imports, y por eso
+  referenciaba `TeacherQuiz` y `Question` sin importarlos. Se borró entero.
+- **El borde Sentry ↔ `scrubEvent` (12 errores).** Dos cambios coordinados sobre
+  `ScrubbableEvent` que **sólo funcionan juntos**: sacar las index signatures y ensanchar
+  la nulabilidad a la del SDK. La causa de fondo: las interfaces de TypeScript no reciben
+  index signature implícita, así que un tipo propio que la exige nunca acepta un `Event`
+  de Sentry por más que las propiedades coincidan. Sin cambio de comportamiento — los 12
+  tests de `sentry-scrub.test.ts` pasan sin tocarse, porque `scrubEvent` muta el objeto
+  original y devuelve esa misma referencia.
+
+> Nota de medición: el documento original estimaba que esto dejaría **19** errores. Ese
+> número medía sólo el arreglo de Sentry, con el archivo muerto todavía presente
+> (31 − 12 = 19). Aplicando las dos cosas juntas quedan **5** (31 − 14 − 12).
 
 ---
 
 ## 3a. Errores de TypeScript ocultos por `ignoreBuildErrors`
 
-[next.config.mjs](../next.config.mjs) tiene `typescript.ignoreBuildErrors: true`, así que
-`npm run build` pasa en verde con errores de tipos adentro. El total real es **31**, no ~20:
+[next.config.mjs](../next.config.mjs) sigue teniendo `typescript.ignoreBuildErrors: true`,
+así que `npm run build` pasa en verde con estos 5 adentro:
 
-| Archivo | Errores |
-|---|---|
-| `lib/moodle-export-no-imports.ts` | 14 |
-| `sentry.server.config.ts` | 4 |
-| `sentry.edge.config.ts` | 4 |
-| `instrumentation-client.ts` | 4 |
-| `app/api/curriculum/subjects/route.ts` | 1 |
-| `app/api/curriculum/topics/route.ts` | 1 |
-| `app/api/quiz/history/route.ts` | 1 |
-| `app/api/teacher/quizzes/route.ts` | 1 |
-| `components/results-screen.tsx` | 1 |
+| Archivo | Errores | Categoría |
+|---|---|---|
+| `app/api/curriculum/subjects/route.ts` | 1 | Riesgo real |
+| `app/api/curriculum/topics/route.ts` | 1 | Riesgo real |
+| `app/api/quiz/history/route.ts` | 1 | Riesgo real |
+| `app/api/teacher/quizzes/route.ts` | 1 | Riesgo real |
+| `components/results-screen.tsx` | 1 | Ruido inofensivo |
 
-### Ruido inofensivo — 27 de 31
+### Ruido inofensivo — 1 de 5
 
-**`lib/moodle-export-no-imports.ts` (14 errores) — archivo muerto.**
-Nada lo importa. Verificado: los tres consumidores reales
-(`teacher/page.tsx`, `subject-content.tsx`, `teacher-quiz-generated.tsx`) y el test
-importan `lib/moodle-export.ts`. El nombre delata el origen: es la copia que generó v0
-para un sandbox que no resolvía imports, y por eso referencia `TeacherQuiz` y `Question`
-sin importarlos (los 6 `TS2304`). No compila, no se ejecuta, no se testea.
-Se borra con `git rm` y se llevan **14 de los 31 errores sin tocar una línea de lógica**.
+**`components/results-screen.tsx`** — `TS7016`, falta el paquete de tipos de
+`canvas-confetti`. Se resuelve con `npm i -D @types/canvas-confetti`.
 
-**Los tres configs de Sentry (12 errores) — desajuste de tipos en el borde, sin efecto en runtime.**
-`scrubEvent` está declarado `<T extends ScrubbableEvent>(event: T): T`, pero `ErrorEvent`
-de Sentry no satisface `ScrubbableEvent`, así que el genérico no liga y el retorno degrada
-a `ScrubbableEvent` — de ahí el `TS2322` que dice que falta la propiedad `type`.
-
-En runtime no falta nada: `scrubEvent` **muta el evento in place y devuelve la misma
-referencia** ([lib/sentry-scrub.ts:118-154](../lib/sentry-scrub.ts#L118)), así que `type`
-sobrevive intacto. Los 12 tests de `lib/sentry-scrub.test.ts` cubren el comportamiento real.
-
-Con una salvedad que lo saca de "vivir con esto": **este es el filtro de PII**. Que el
-borde no typechequee significa que el compilador no está verificando el contrato entre
-Sentry y el scrubber. Si un bump menor del SDK cambia la forma de `Event`, hoy no lo
-avisa nadie — y el modo de falla de este módulo en particular es filtrar datos de alumnos
-a un servicio externo.
-
-**`components/results-screen.tsx` (1 error) — `canvas-confetti` sin tipos.**
-`TS7016`, falta el paquete de tipos. Se resuelve con `npm i -D @types/canvas-confetti`.
-
-### Riesgo real — 4 de 31
+### Riesgo real — 4 de 5
 
 Los cuatro son el mismo `TS7006`: un callback sobre filas de Neon cuyo parámetro queda
 `any` implícito. El driver devuelve las filas sin forma, no hay ORM (decisión explícita,
@@ -84,42 +87,28 @@ Qué podría pasar en runtime, uno por uno:
 El patrón común es que ninguno *rompe*: los cuatro degradan a "no hay datos", que es
 indistinguible de un caso vacío legítimo.
 
-### Recomendación: ¿se puede sacar `ignoreBuildErrors`?
+### ¿Se puede sacar `ignoreBuildErrors`?
 
-**Sí, y no hay nada estructural que lo impida.** Verificado empíricamente, no estimado.
+**Sí, y ya no queda nada estructural en el camino** — lo que lo hacía no trivial (el borde
+de Sentry) está resuelto. Faltan dos pasos, los dos mecánicos:
 
 | Paso | Errores que saca |
 |---|---|
-| `git rm lib/moodle-export-no-imports.ts` | −14 |
-| Alinear `ScrubbableEvent` con los tipos de Sentry | −12 |
 | Tipar las 4 filas de Neon | −4 |
 | `npm i -D @types/canvas-confetti` | −1 |
 
-El único paso no obvio es el de Sentry, y conviene saber de antemano que **no es un
-one-liner**: cascadea. Lo probé en tres iteraciones y cada arreglo destapaba el siguiente
-(`user.id: string` vs `string | number` → `ip_address` que puede ser `null` → `Breadcrumb`
-sin index signature). La causa de fondo es que **las interfaces de TypeScript no reciben
-index signature implícita**, así que cualquier tipo propio que lleve `[key: string]: unknown`
-jamás va a aceptar un `Event` de Sentry, por más que las propiedades coincidan.
+Con eso `tsc --noEmit` queda en 0 y se puede borrar la flag de `next.config.mjs`.
 
-Lo que sí funciona son dos cambios coordinados sobre `ScrubbableEvent`: ensanchar la
-nulabilidad (`id?: string | number`, `username`/`email`/`ip_address` admitiendo `null`)
-**y** sacar las index signatures. Aplicando los dos juntos, `tsc` baja de **31 a 19** —
-o sea, se van los 12 de Sentry de una. Verificado y revertido; los tests de
-`sentry-scrub.test.ts` siguen typechequeando sin la index signature.
-
-Dos notas de secuencia:
-
-1. **Borrar el archivo muerto primero.** Son 14 de 31 gratis, y deja el resto legible.
-2. Sacar `ignoreBuildErrors` hace que CI empiece a fallar ante cualquier error de tipos
-   nuevo — que es el punto, pero conviene que aterrice cuando nadie tenga una rama larga
-   abierta. Es exactamente el escenario que produjo la colisión de la migración 016.
+Una sola nota de secuencia: sacar `ignoreBuildErrors` hace que CI empiece a fallar ante
+cualquier error de tipos nuevo — que es el punto, pero conviene que aterrice cuando nadie
+tenga una rama larga abierta. Es exactamente el escenario que produjo la colisión de la
+migración 016.
 
 ---
 
 ## 3b. `npm audit` — 6 vulnerabilidades (4 high, 2 critical)
 
-No se corrió `npm audit fix`.
+**Ninguna resuelta.** No se corrió `npm audit fix`.
 
 ### 1. `next` — **directa**, high
 
@@ -135,8 +124,8 @@ Arrastra ~22 advisories. Los que importan acá:
   middleware **no** le da a un alumno acceso a los endpoints de docente.
   Lo que sí queda expuesto son las **páginas** `/teacher/*`, que dependen sólo del
   middleware. Ese es el hueco real.
-- **DoS** (Server Components, Cache Components, Server Actions, Image Optimization).
-  Reales pero de bajo valor para este target.
+- **DoS** (Server Components, Cache Components, Server Actions). Reales pero de bajo valor
+  para este target.
 - **DoS de Image Optimization** (2 advisories) — **no aplica**: `next.config.mjs` tiene
   `images.unoptimized: true`, el pipeline no corre.
 
@@ -214,7 +203,7 @@ cualquier limpieza de dependencias, sin urgencia.*
 
 ### Arreglar antes de invitar usuarios
 
-Todo lo que puede exponer datos de alumnos o docentes reales.
+Todo lo que puede exponer datos de alumnos o docentes reales. **Los tres siguen abiertos.**
 
 1. **`next` → 16.2.12.** Bump de patch. Cierra la familia de bypass de middleware. Las
    APIs de docente ya están cubiertas por revalidación de rol contra la base, pero las
@@ -230,26 +219,26 @@ Todo lo que puede exponer datos de alumnos o docentes reales.
 
 ### Arreglar en el próximo sprint
 
-Nada de esto rompe hoy, pero todo apaga señales que después hacen falta.
-
-4. **`git rm lib/moodle-export-no-imports.ts`.** 14 de 31 errores, cero riesgo.
-5. **Alinear los tipos de `ScrubbableEvent`.** Los otros 12. No es cosmético: es el filtro
-   de PII y hoy el compilador no está verificando su borde con Sentry.
-6. **Tipar las 4 filas de Neon.** Los cuatro fallan en silencio hacia "no hay datos", que
+4. **Tipar las 4 filas de Neon.** Los cuatro fallan en silencio hacia "no hay datos", que
    es el modo de falla más caro de diagnosticar.
-7. **Sacar `ignoreBuildErrors`** una vez que 4–6 estén. Que aterrice sin ramas largas
+5. **`npm i -D @types/canvas-confetti`.** Un error, un comando.
+6. **Sacar `ignoreBuildErrors`** una vez que 4 y 5 estén. Que aterrice sin ramas largas
    abiertas.
-8. **`npm i -D @types/canvas-confetti`.** Un error, un comando.
 
 ### Vivir con esto
 
-9. **`postcss`** — sólo build, y todo el CSS es propio. Se arregla solo con el bump de `next`.
-10. **`sharp`** — camino de código muerto por `images.unoptimized: true`. **Anotar la
-    condición junto a esa flag**: si se activa la optimización de imágenes, esto se
-    enciende sin avisar.
-11. **`vite`** — devDependency, nunca se despliega.
-12. **Higiene del repo, sin urgencia**: [test-export.ts](../test-export.ts) es un script
-    de debug suelto en la raíz (no lo levanta vitest, el include es `*.test.ts`), y
-    `pnpm-lock.yaml` convive con `package-lock.json` estando 3 meses desactualizado —
-    el proyecto usa npm (CI, `packageManager` sin declarar), así que quien corra
-    `pnpm install` se lleva un árbol de dependencias viejo.
+7. **`postcss`** — sólo build, y todo el CSS es propio. Se arregla solo con el bump de `next`.
+8. **`sharp`** — camino de código muerto por `images.unoptimized: true`. **Anotar la
+   condición junto a esa flag**: si se activa la optimización de imágenes, esto se
+   enciende sin avisar.
+9. **`vite`** — devDependency, nunca se despliega.
+
+### Cerrado
+
+- ~~`lib/moodle-export-no-imports.ts` muerto~~ → borrado en `dcaece1`.
+- ~~Tipos del borde de Sentry~~ → alineados en `dcaece1`.
+- ~~`test-export.ts` y `pnpm-lock.yaml` sueltos en la raíz~~ → borrados en `cff5453`,
+  con `packageManager: npm@10.9.8` declarado para que no vuelva a haber ambigüedad de
+  gestor. Ojo: CI fija Node 22 (que trae ese npm) mientras el entorno local corre Node 24
+  / npm 11 — si alguna vez se habilita Corepack, esa diferencia pasa a ser un error duro.
+- ~~`tsconfig.tsbuildinfo` trackeado~~ → ignorado en `b4917c8`.
