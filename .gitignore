@@ -14,5 +14,11 @@ next.user-config.*
 node_modules
 .next/
 .DS_Store
+
+# Build artifacts. El .tsbuildinfo es la caché incremental de tsc: cambia en cada
+# build, así que trackeado ensucia todos los diffs y es conflicto garantizado
+# cuando dos ramas tocan el proyecto en paralelo.
+*.tsbuildinfo
+coverage/
 # clerk configuration (can include secrets)
 /.clerk/
