@@ -52,7 +52,7 @@ const KEEP_BACKUPS = Number.parseInt(process.env.BACKUP_KEEP ?? '30', 10)
 function requireEnv(name: string): string {
   const value = process.env[name]
   if (!value) {
-    console.error(`❌ Falta la variable de entorno ${name}.`)
+    console.error(`❌ Falta la variable de entorno ${name} (no se proveyó en process.env).`)
     process.exit(1)
   }
   return value

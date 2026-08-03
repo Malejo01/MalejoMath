@@ -14,6 +14,7 @@
  */
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 import * as dotenv from 'dotenv'
+import * as fs from 'node:fs'
 import * as readline from 'node:readline/promises'
 
 export type DeploymentEnv = 'production' | 'staging' | 'development'
@@ -147,11 +148,16 @@ async function confirmProduction(target: DbTarget, action: string): Promise<void
 
 export async function resolveDbTarget(options: ResolveOptions): Promise<DbTarget> {
   const envFile = readRequestedEnvFile()
-  dotenv.config({ path: envFile })
+  if (fs.existsSync(envFile)) {
+    dotenv.config({ path: envFile })
+  }
 
   const url = process.env.DATABASE_URL
   if (!url) {
-    console.error(`DATABASE_URL no encontrada en ${envFile}`)
+    const context = fs.existsSync(envFile)
+      ? `(ni en process.env, ni en el archivo local ${envFile})`
+      : `(ni en process.env, y el archivo local de fallback ${envFile} no existe)`
+    console.error(`DATABASE_URL no encontrada ${context}`)
     process.exit(1)
   }
 
