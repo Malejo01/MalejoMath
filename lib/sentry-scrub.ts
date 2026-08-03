@@ -85,6 +85,20 @@ export function redactUrl(url: string): string {
  * Forma mínima de un evento de Sentry, con lo único que este módulo toca. Se
  * declara acá en vez de importar el tipo del SDK para que el archivo siga
  * siendo testeable sin arrastrar `@sentry/nextjs` al entorno de test.
+ *
+ * Dos detalles que parecen cosméticos y no lo son, porque de ellos depende que
+ * `Event` de Sentry sea asignable a este tipo — y por lo tanto que `beforeSend`
+ * typechequee de verdad en vez de vivir tapado por `ignoreBuildErrors`:
+ *
+ *  1. Nada de index signatures (`[key: string]: unknown`). Las interfaces de
+ *     TypeScript NO reciben index signature implícita, así que un tipo que la
+ *     exige jamás acepta una interfaz del SDK por más que las propiedades
+ *     coincidan. Este tipo describe lo que el scrubber lee; las claves que no
+ *     nombra viajan igual en runtime porque `scrubEvent` muta el objeto
+ *     original y devuelve esa misma referencia.
+ *  2. La nulabilidad tiene que ser igual de ancha que la del SDK: Sentry tipa
+ *     `user.id` como `string | number` y deja pasar `null` en el resto. Cerrar
+ *     eso acá no valida nada, sólo rompe la asignación.
  */
 export interface ScrubbableEvent {
   request?: {
@@ -95,16 +109,14 @@ export interface ScrubbableEvent {
     cookies?: unknown
   }
   user?: {
-    id?: string
-    username?: string
-    email?: string
-    ip_address?: string
-    [key: string]: unknown
+    id?: string | number
+    username?: string | null
+    email?: string | null
+    ip_address?: string | null
   }
   extra?: Record<string, unknown>
   contexts?: Record<string, unknown>
-  breadcrumbs?: Array<{ data?: unknown; message?: string; [key: string]: unknown }>
-  [key: string]: unknown
+  breadcrumbs?: Array<{ data?: unknown; message?: string }>
 }
 
 /**
