@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveDbTarget } from './lib/db-target'
+import { resolveDbTarget, normalizeNeonHost } from './lib/db-target'
 
 /**
  * Bootstraps the guardrail itself, so it is the one runner that cannot use it
@@ -34,7 +34,7 @@ async function run() {
   // the row with the current host — that would make a staging clone look like
   // the original and defeat the whole clone-vs-production distinction.
   await target.sql`
-    UPDATE deployment_env SET origin_host = ${target.host} WHERE id = true AND origin_host IS NULL
+    UPDATE deployment_env SET origin_host = ${normalizeNeonHost(target.host)} WHERE id = true AND origin_host IS NULL
   `
 
   const rows = (await target.sql`SELECT environment, origin_host FROM deployment_env WHERE id = true`) as {

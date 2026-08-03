@@ -89,3 +89,45 @@ describe('resolveDbTarget sin marcador de entorno', () => {
     )
   })
 })
+
+describe('normalizeNeonHost', () => {
+  it('elimina el sufijo -pooler solo del primer segmento (mismo base)', async () => {
+    const { normalizeNeonHost } = await import('./db-target')
+    expect(normalizeNeonHost('ep-test-host-pooler.c-5.region.aws.neon.tech')).toBe('ep-test-host.c-5.region.aws.neon.tech')
+    expect(normalizeNeonHost('ep-test-host.c-5.region.aws.neon.tech')).toBe('ep-test-host.c-5.region.aws.neon.tech')
+  })
+
+  it('no confunde hosts genuinamente distintos', async () => {
+    const { normalizeNeonHost } = await import('./db-target')
+    expect(normalizeNeonHost('ep-host-one-pooler.c-5.aws.neon.tech')).not.toBe(normalizeNeonHost('ep-host-two-pooler.c-5.aws.neon.tech'))
+  })
+
+  it('no elimina -pooler si está en el medio (ej. foo.bar-pooler.baz)', async () => {
+    const { normalizeNeonHost } = await import('./db-target')
+    expect(normalizeNeonHost('foo.bar-pooler.baz')).toBe('foo.bar-pooler.baz')
+  })
+})
+
+describe('resolveDbTarget integración pooled/unpooled', () => {
+  it('resuelve a PRODUCCIÓN si el marcador tiene el host pooled y nos conectamos por el unpooled', async () => {
+    // Simulamos que la base tiene guardado el host con -pooler
+    query.mockResolvedValue([
+      { environment: 'production', origin_host: 'ep-test-host-pooler.c-5.region.aws.neon.tech' }
+    ])
+
+    // Nos conectamos usando la URL unpooled
+    const original = process.env.DATABASE_URL
+    process.env.DATABASE_URL = 'postgres://user:pass@ep-test-host.c-5.region.aws.neon.tech/neondb'
+    
+    try {
+      const { resolveDbTarget } = await import('./db-target')
+      // No debe ser destructiva para que no nos pida confirmación por TTY
+      const target = await resolveDbTarget({ action: 'probe', destructive: false })
+
+      expect(target.environment).toBe('production')
+      expect(target.isRealProduction).toBe(true)
+    } finally {
+      process.env.DATABASE_URL = original
+    }
+  })
+})

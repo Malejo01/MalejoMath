@@ -18,6 +18,15 @@ import * as readline from 'node:readline/promises'
 
 export type DeploymentEnv = 'production' | 'staging' | 'development'
 
+/**
+ * Normalizes a Neon host by removing the `-pooler` suffix from the first segment
+ * (the main subdomain) if present. This ensures that pooled and unpooled connections
+ * to the same database are recognized as identical.
+ */
+export function normalizeNeonHost(host: string): string {
+  return host.replace(/^([^.]+)-pooler(\.|$)/, '$1$2')
+}
+
 /** What `neon(url)` actually returns: rows as arrays, not full result objects. */
 export type Sql = NeonQueryFunction<false, false>
 
@@ -161,7 +170,8 @@ export async function resolveDbTarget(options: ResolveOptions): Promise<DbTarget
   // A clone always arrives claiming to be production. It is only the real one
   // if we are also standing on the host the marker was stamped on.
   const isRealProduction =
-    marker.environment === 'production' && (marker.originHost === null || marker.originHost === host)
+    marker.environment === 'production' &&
+    (marker.originHost === null || normalizeNeonHost(marker.originHost) === normalizeNeonHost(host))
 
   const target: DbTarget = {
     sql,
