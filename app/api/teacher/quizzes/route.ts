@@ -3,6 +3,31 @@ import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import type { Question, TeacherQuizStatus } from '@/lib/types'
 
+/**
+ * Forma del SELECT sobre `teacher_quizzes` — ver
+ * scripts/003-teacher-quizzes-and-program-style.sql.
+ *
+ * `selected_topics` y `questions` son JSONB y quedan `unknown`: esta ruta los
+ * reenvía tal cual al cliente sin leerlos, así que afirmar una forma acá sería
+ * inventar un contrato que nadie verifica. `mode` y `status` sí llevan su unión
+ * porque el CHECK de la tabla la garantiza.
+ */
+interface TeacherQuizRow {
+  id: number
+  user_id: string
+  teacher_program_id: number
+  title: string
+  subject_name: string
+  mode: 'teorico' | 'practico' | 'mixto'
+  status: 'saved' | 'pending_share'
+  selected_topics: unknown
+  question_count: number
+  questions: unknown
+  pedagogy_context: string | null
+  created_at: Date | null
+  updated_at: Date | null
+}
+
 function isTeacherRole(role: unknown): boolean {
   return role === 'DOCENTE'
 }
@@ -44,7 +69,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'programId invalido' }, { status: 400 })
     }
 
-    const rows = hasProgramFilter
+    const rows = (hasProgramFilter
       ? await sql`
           SELECT id, user_id, teacher_program_id, title, subject_name, mode, status, selected_topics, question_count, questions, pedagogy_context, created_at, updated_at
           FROM teacher_quizzes
@@ -56,12 +81,13 @@ export async function GET(req: Request) {
           FROM teacher_quizzes
           WHERE user_id = ${userId}
           ORDER BY created_at DESC
-        `
+        `) as TeacherQuizRow[]
 
     const filteredRows = rows.filter((quiz) => {
       const matchesMode = !modeFilter || modeFilter.length === 0 || quiz.mode === modeFilter
-      const matchesSubject = subjectFilter.length === 0 || String(quiz.subject_name || '').toLowerCase().includes(subjectFilter)
-      const createdAtTime = new Date(quiz.created_at).getTime()
+      const matchesSubject = subjectFilter.length === 0 || (quiz.subject_name || '').toLowerCase().includes(subjectFilter)
+      // `?? 0` conserva el comportamiento previo: `new Date(null)` ya era la época.
+      const createdAtTime = new Date(quiz.created_at ?? 0).getTime()
       const createdAfterTime = createdAfter ? new Date(createdAfter).getTime() : Number.NaN
       const matchesDate = Number.isNaN(createdAfterTime) || createdAtTime >= createdAfterTime
 

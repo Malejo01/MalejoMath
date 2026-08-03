@@ -4,6 +4,11 @@ import { DEFAULT_JURISDICTION } from '@/lib/curriculum-config'
 
 export const dynamic = 'force-dynamic'
 
+/** Forma de `SELECT DISTINCT materia`. `curriculum.materia` es TEXT NOT NULL — ver scripts/007-curriculum.sql. */
+interface SubjectRow {
+  materia: string
+}
+
 // GET /api/curriculum/subjects?nivel=Secundario&grado=1er+Año&jurisdiccion=Salta
 // Returns the ordered list of unique materias for nivel+grado(+jurisdiccion).
 export async function GET(req: Request) {
@@ -17,12 +22,12 @@ export async function GET(req: Request) {
   }
 
   try {
-    const rows = await sql`
+    const rows = (await sql`
       SELECT DISTINCT materia
       FROM curriculum
       WHERE nivel = ${nivel} AND grado = ${grado} AND jurisdiccion = ${jurisdiccion}
       ORDER BY materia
-    `
+    `) as SubjectRow[]
     return NextResponse.json({ subjects: rows.map((r) => r.materia) })
   } catch (error) {
     return NextResponse.json(

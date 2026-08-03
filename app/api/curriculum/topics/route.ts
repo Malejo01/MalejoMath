@@ -4,6 +4,29 @@ import { DEFAULT_JURISDICTION } from '@/lib/curriculum-config'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Forma de `SELECT eje, temas` — ver scripts/007-curriculum.sql.
+ *
+ * `temas` queda `unknown` a propósito. Es una columna JSONB: Postgres garantiza
+ * que el contenido es JSON válido, no que sea un arreglo de strings. Declararla
+ * `string[]` sería trasladar la mentira del `as` al tipo, que es justo lo que
+ * hacía fallar esto en silencio.
+ */
+interface AxisRow {
+  eje: string
+  temas: unknown
+}
+
+/**
+ * Estrecha el JSONB al contrato que espera el front. Lo que no es un arreglo de
+ * strings se descarta acá, donde se puede ver, en vez de llegar al browser y
+ * romper el `.map`/`.join` que lo consume.
+ */
+function toTopicList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
 // GET /api/curriculum/topics?nivel=Secundario&grado=1er+Año&materia=Matemática&jurisdiccion=Salta
 // Returns all ejes with their temas for the given nivel+grado+materia(+jurisdiccion).
 export async function GET(req: Request) {
@@ -18,7 +41,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const rows = await sql`
+    const rows = (await sql`
       SELECT eje, temas
       FROM curriculum
       WHERE nivel   = ${nivel}
@@ -26,11 +49,10 @@ export async function GET(req: Request) {
         AND materia = ${materia}
         AND jurisdiccion = ${jurisdiccion}
       ORDER BY id
-    `
-    // temas is stored as JSONB (string[]); cast for TS safety
+    `) as AxisRow[]
     const axes = rows.map((r) => ({
-      eje:   r.eje as string,
-      temas: r.temas as string[],
+      eje:   r.eje,
+      temas: toTopicList(r.temas),
     }))
     return NextResponse.json({ axes })
   } catch (error) {

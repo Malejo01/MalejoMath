@@ -5,6 +5,30 @@ import { debugLog } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Forma del SELECT sobre `quiz_attempts` — ver scripts/001-create-tables.sql.
+ *
+ * Dos columnas no se mapean al tipo que uno esperaría:
+ *
+ *  - `score` es DECIMAL(4,2), y el driver de Postgres devuelve los numeric como
+ *    string para no perder precisión. Por eso todos los consumidores ya lo
+ *    envuelven en `Number(...)` (ver app/(app)/history/page.tsx).
+ *  - `completed_at` no es NOT NULL en el schema (sólo tiene DEFAULT NOW()), así
+ *    que el tipo lo refleja y obliga a decidir qué hacer con el nulo.
+ */
+interface AttemptRow {
+  id: number
+  subject: string
+  mode: 'teorico' | 'practico' | 'mixto'
+  topics: string[]
+  total_questions: number
+  correct_answers: number
+  incorrect_answers: number
+  score: string
+  passed: boolean
+  completed_at: Date | null
+}
+
 export async function GET(req: Request) {
   try {
     debugLog('[v0] History API called')
@@ -35,8 +59,8 @@ export async function GET(req: Request) {
 
     // Obtener intentos de quiz (ultimos 20)
     debugLog('[v0] Fetching quiz attempts...')
-    const rawAttempts = await sql`
-      SELECT 
+    const rawAttempts = (await sql`
+      SELECT
         id,
         subject,
         mode,
@@ -51,12 +75,13 @@ export async function GET(req: Request) {
       WHERE user_id = ${userId}
       ORDER BY completed_at DESC
       LIMIT 20
-    `
+    `) as AttemptRow[]
     const attempts = rawAttempts.filter((attempt) => {
-      const matchesSubject = subjectFilter.length === 0 || String(attempt.subject).toLowerCase().includes(subjectFilter.toLowerCase())
-      const matchesMode = modeFilter.length === 0 || String(attempt.mode) === modeFilter
+      const matchesSubject = subjectFilter.length === 0 || attempt.subject.toLowerCase().includes(subjectFilter.toLowerCase())
+      const matchesMode = modeFilter.length === 0 || attempt.mode === modeFilter
       const createdAfterTime = createdAfterFilter.length > 0 ? new Date(createdAfterFilter).getTime() : Number.NaN
-      const completedTime = new Date(attempt.completed_at).getTime()
+      // `?? 0` conserva el comportamiento previo: `new Date(null)` ya era la época.
+      const completedTime = new Date(attempt.completed_at ?? 0).getTime()
       const matchesDate = Number.isNaN(createdAfterTime) || completedTime >= createdAfterTime
 
       return matchesSubject && matchesMode && matchesDate

@@ -1,13 +1,13 @@
 # Deuda técnica
 
-Relevado el **2026-08-03** sobre `feat/ai-usage-and-db-guardrails`, actualizado en el
-mismo día tras resolver la primera tanda. Medido con `npx tsc --noEmit` y `npm audit`.
+Relevado el **2026-08-03** sobre `feat/ai-usage-and-db-guardrails`, actualizado el mismo
+día a medida que se fue cerrando. Medido con `npx tsc --noEmit` y `npm audit`.
 
 Versiones al momento de medir: `next@16.2.4`, `next-auth@5.0.0-beta.31`,
 `postcss@8.5.14`, `typescript@5.7.3`.
 
-**Estado: 5 errores de TypeScript pendientes (eran 31) y 6 vulnerabilidades de npm audit,
-ninguna resuelta todavía.**
+**Estado: TypeScript en 0 errores y `ignoreBuildErrors` fuera. Quedan las 6
+vulnerabilidades de `npm audit`, ninguna resuelta.**
 
 ---
 
@@ -19,90 +19,60 @@ ninguna resuelta todavía.**
 | `a285bea` | Tests del fail-closed de `resolveDbTarget` |
 | `cff5453` | `pnpm-lock.yaml` y `test-export.ts` borrados; `packageManager: npm@10.9.8` declarado |
 | `dcaece1` | `lib/moodle-export-no-imports.ts` borrado + tipos de Sentry alineados — **31 → 5 errores** |
-
-Detalle de lo que se cerró en `dcaece1`, porque el razonamiento sigue siendo útil:
-
-- **`lib/moodle-export-no-imports.ts` (14 errores).** Archivo muerto: no lo importaba
-  nadie. Era la copia que generó v0 para un sandbox sin resolución de imports, y por eso
-  referenciaba `TeacherQuiz` y `Question` sin importarlos. Se borró entero.
-- **El borde Sentry ↔ `scrubEvent` (12 errores).** Dos cambios coordinados sobre
-  `ScrubbableEvent` que **sólo funcionan juntos**: sacar las index signatures y ensanchar
-  la nulabilidad a la del SDK. La causa de fondo: las interfaces de TypeScript no reciben
-  index signature implícita, así que un tipo propio que la exige nunca acepta un `Event`
-  de Sentry por más que las propiedades coincidan. Sin cambio de comportamiento — los 12
-  tests de `sentry-scrub.test.ts` pasan sin tocarse, porque `scrubEvent` muta el objeto
-  original y devuelve esa misma referencia.
-
-> Nota de medición: el documento original estimaba que esto dejaría **19** errores. Ese
-> número medía sólo el arreglo de Sentry, con el archivo muerto todavía presente
-> (31 − 12 = 19). Aplicando las dos cosas juntas quedan **5** (31 − 14 − 12).
+| *(este)* | 4 filas de Neon tipadas + `@types/canvas-confetti` + `ignoreBuildErrors` fuera — **5 → 0** |
 
 ---
 
-## 3a. Errores de TypeScript ocultos por `ignoreBuildErrors`
+## 3a. Errores de TypeScript — **resuelto**
 
-[next.config.mjs](../next.config.mjs) sigue teniendo `typescript.ignoreBuildErrors: true`,
-así que `npm run build` pasa en verde con estos 5 adentro:
+`typescript.ignoreBuildErrors` ya no está en [next.config.mjs](../next.config.mjs), así que
+**`npm run build` typechequea de verdad**: un error de tipos ahora rompe el build y, por
+lo tanto, CI. Verificado inyectando un error deliberado — el build sale con código 1 y
+`Type error:` en la salida, no en verde.
 
-| Archivo | Errores | Categoría |
+Cómo se cerraron los 31:
+
+| Origen | Errores | Cómo se resolvió |
 |---|---|---|
-| `app/api/curriculum/subjects/route.ts` | 1 | Riesgo real |
-| `app/api/curriculum/topics/route.ts` | 1 | Riesgo real |
-| `app/api/quiz/history/route.ts` | 1 | Riesgo real |
-| `app/api/teacher/quizzes/route.ts` | 1 | Riesgo real |
-| `components/results-screen.tsx` | 1 | Ruido inofensivo |
+| `lib/moodle-export-no-imports.ts` | 14 | Archivo muerto, borrado (`dcaece1`) |
+| Borde Sentry ↔ `scrubEvent` | 12 | `ScrubbableEvent` alineado con el SDK (`dcaece1`) |
+| Filas de Neon con `any` implícito | 4 | Tipadas con el shape real de cada query |
+| `canvas-confetti` sin tipos | 1 | `npm i -D @types/canvas-confetti` |
 
-### Ruido inofensivo — 1 de 5
+### Las 4 filas de Neon
 
-**`components/results-screen.tsx`** — `TS7016`, falta el paquete de tipos de
-`canvas-confetti`. Se resuelve con `npm i -D @types/canvas-confetti`.
+El problema de fondo era que el driver devuelve las filas sin forma, no hay ORM (decisión
+explícita, ver CLAUDE.md), y entonces **el único lugar donde vivía el contrato de shape era
+el string de SQL**. Ninguno de los cuatro rompía: los cuatro degradaban en silencio a "no
+hay datos", indistinguible de un caso vacío legítimo.
 
-### Riesgo real — 4 de 5
+Cada query declara ahora una interfaz con las columnas que realmente selecciona, y con un
+comentario que apunta al `.sql` donde está el DDL. No se usó un tipo laxo genérico: donde
+el schema no garantiza una forma, el tipo lo dice.
 
-Los cuatro son el mismo `TS7006`: un callback sobre filas de Neon cuyo parámetro queda
-`any` implícito. El driver devuelve las filas sin forma, no hay ORM (decisión explícita,
-ver CLAUDE.md), y entonces **el único lugar donde vive el contrato de shape es el string
-de SQL**. TypeScript no lo puede cruzar, y `any` hace que tampoco avise.
+Tres decisiones que vale la pena recordar, porque no son obvias:
 
-Qué podría pasar en runtime, uno por uno:
+- **`curriculum.temas` es JSONB → `unknown`, no `string[]`.** Postgres garantiza JSON
+  válido, no un arreglo de strings. El `as string[]` que había (comentado como *"cast for
+  TS safety"*) no daba seguridad: la suprimía. Ahora la columna se estrecha con un guard
+  (`toTopicList`) que descarta lo que no sea `string[]` en el servidor, donde se puede ver,
+  en vez de dejarlo llegar al browser a romper el `.map`/`.join`.
+  **Es el único cambio de comportamiento de la tanda**: datos malformados ahora devuelven
+  lista vacía en lugar de romper del lado del cliente.
+- **`quiz_attempts.score` es DECIMAL(4,2) → `string`.** El driver devuelve los `numeric`
+  como string para no perder precisión. No es una elección de estilo: es la razón por la
+  que todos los consumidores ya lo envolvían en `Number(...)`.
+- **`completed_at` / `created_at` son `Date | null`.** En el schema sólo tienen
+  `DEFAULT NOW()`, sin `NOT NULL`. Los call sites usan `?? 0`, que conserva exactamente el
+  comportamiento previo (`new Date(null)` ya era la época).
 
-- **[app/api/curriculum/subjects/route.ts:26](../app/api/curriculum/subjects/route.ts#L26)** —
-  `rows.map((r) => r.materia)`. Si la columna o su alias cambia, el endpoint devuelve
-  `[undefined, undefined, …]` y el selector de materias renderiza opciones vacías. Sin
-  excepción, sin log, sin error de build: la app queda muda.
-- **[app/api/curriculum/topics/route.ts:31](../app/api/curriculum/topics/route.ts#L31)** —
-  `temas: r.temas as string[]`. El peor de los cuatro: es una aserción sin chequeo sobre
-  una columna **JSONB**. El `as` afirma `string[]` sobre algo que la base puede devolver
-  como objeto o `null`. Si eso pasa, el `.map`/`.join` de más abajo explota en el browser,
-  o pinta `[object Object]` en la lista de temas. El comentario de la línea de arriba dice
-  "cast for TS safety" — el cast no da seguridad, la suprime.
-- **[app/api/quiz/history/route.ts:55](../app/api/quiz/history/route.ts#L55)** —
-  `String(attempt.subject)`. `String(undefined)` es `"undefined"`, así que una columna
-  renombrada no rompe: hace que el filtro de historial deje de matchear siempre. El alumno
-  ve un historial vacío y no hay nada en los logs.
-- **[app/api/teacher/quizzes/route.ts:61](../app/api/teacher/quizzes/route.ts#L61)** —
-  mismo patrón sobre `quiz.mode` y `quiz.subject_name`, con el mismo desenlace del lado
-  del docente.
+### Pendiente menor relacionado
 
-El patrón común es que ninguno *rompe*: los cuatro degradan a "no hay datos", que es
-indistinguible de un caso vacío legítimo.
-
-### ¿Se puede sacar `ignoreBuildErrors`?
-
-**Sí, y ya no queda nada estructural en el camino** — lo que lo hacía no trivial (el borde
-de Sentry) está resuelto. Faltan dos pasos, los dos mecánicos:
-
-| Paso | Errores que saca |
-|---|---|
-| Tipar las 4 filas de Neon | −4 |
-| `npm i -D @types/canvas-confetti` | −1 |
-
-Con eso `tsc --noEmit` queda en 0 y se puede borrar la flag de `next.config.mjs`.
-
-Una sola nota de secuencia: sacar `ignoreBuildErrors` hace que CI empiece a fallar ante
-cualquier error de tipos nuevo — que es el punto, pero conviene que aterrice cuando nadie
-tenga una rama larga abierta. Es exactamente el escenario que produjo la colisión de la
-migración 016.
+`lib/db.ts` declara `DbQuizAttempt`, `DbTeacherQuiz` y `DbTopicMastery`, y **no los importa
+nadie**. Además no coinciden con el schema: `DbQuizAttempt.id` dice `string` cuando la
+columna es `SERIAL`, le faltan `incorrect_answers` y `passed`, y tipa `score` como `number`.
+Por eso no se reutilizaron acá — habría sido adoptar tipos ya equivocados. Conviene
+borrarlos o corregirlos, pero al no estar en uso no rompen nada hoy.
 
 ---
 
@@ -177,11 +147,10 @@ hostil, cosa que no pasa.
 
 **No explotable en este proyecto**: `sharp` sólo lo invoca el pipeline de Image
 Optimization de Next, y `next.config.mjs` lo tiene apagado con `images.unoptimized: true`.
-Es código muerto en este deploy.
+Es código muerto en este deploy. La condición quedó anotada en un comentario **junto a la
+flag misma**, que es donde alguien la va a leer antes de cambiarla.
 
-*Veredicto: vivir con esto — **con una condición**. El día que alguien saque
-`unoptimized: true` para mejorar performance de imágenes, esta vulnerabilidad se enciende
-sola y en silencio. Debería quedar anotado junto a esa flag, no sólo acá.*
+*Veredicto: vivir con esto, con esa condición.*
 
 ### 6. `vite` — **transitiva** (vía `vitest`, devDependency), high
 
@@ -199,11 +168,43 @@ cualquier limpieza de dependencias, sin urgencia.*
 
 ---
 
-## 3c. Priorización
+## Riesgos latentes
+
+Cosas que hoy no molestan y que van a morder si cambia una condición. No son tareas: son
+avisos para el momento en que alguien toque justo eso.
+
+### Corepack y el pin de `packageManager`
+
+`package.json` declara `"packageManager": "npm@10.9.8"`, que es el npm que trae Node 22 —
+la versión que fija CI ([ci.yml](../.github/workflows/ci.yml#L21)). El entorno de
+desarrollo actual corre **Node 24 / npm 11**.
+
+Hoy no pasa nada: Corepack está instalado (0.34.6) pero **no está interceptando `npm`**;
+el binario que se ejecuta es el que viene con Node, así que el campo es metadata inerte y
+sirve nada más para declarar que el gestor es npm y no pnpm.
+
+Se enciende en dos escenarios:
+
+1. **Alguien corre `corepack enable`.** Ahí Corepack empieza a hacer valer el pin, y la
+   diferencia entre el npm declarado (10.9.8) y el local (11.x) pasa de ser cosmética a
+   ser un error duro en cada comando.
+2. **CI se actualiza dentro de Node 22.** El workflow fija `node-version: '22'`, no una
+   versión exacta, así que cuando salga un Node 22 con otro npm, el número pineado deja de
+   describir lo que CI realmente usa — que era justamente para lo que se puso.
+
+Si alguna vez molesta, la salida es fijar la versión exacta de Node en el workflow y que
+el pin de npm la siga. Se dejó como está a propósito: el valor del campo hoy es declarar
+**qué gestor** se usa, no clavar una versión.
+
+### `images.unoptimized: true` y `sharp`
+
+Ver el punto 5 de `npm audit`. Está comentado en `next.config.mjs`.
+
+---
+
+## Prioridades abiertas
 
 ### Arreglar antes de invitar usuarios
-
-Todo lo que puede exponer datos de alumnos o docentes reales. **Los tres siguen abiertos.**
 
 1. **`next` → 16.2.12.** Bump de patch. Cierra la familia de bypass de middleware. Las
    APIs de docente ya están cubiertas por revalidación de rol contra la base, pero las
@@ -217,28 +218,13 @@ Todo lo que puede exponer datos de alumnos o docentes reales. **Los tres siguen 
    hay una ventana en la que el código nuevo consulta una tabla que todavía no existe.
    Un `ADD COLUMN` tolera ese desfasaje; un rename no.
 
-### Arreglar en el próximo sprint
+### Próximo sprint
 
-4. **Tipar las 4 filas de Neon.** Los cuatro fallan en silencio hacia "no hay datos", que
-   es el modo de falla más caro de diagnosticar.
-5. **`npm i -D @types/canvas-confetti`.** Un error, un comando.
-6. **Sacar `ignoreBuildErrors`** una vez que 4 y 5 estén. Que aterrice sin ramas largas
-   abiertas.
+4. **Borrar o corregir las interfaces `Db*` sin uso de `lib/db.ts`** (ver 3a). No rompen
+   nada, pero son tipos equivocados esperando que alguien los adopte de buena fe.
 
 ### Vivir con esto
 
-7. **`postcss`** — sólo build, y todo el CSS es propio. Se arregla solo con el bump de `next`.
-8. **`sharp`** — camino de código muerto por `images.unoptimized: true`. **Anotar la
-   condición junto a esa flag**: si se activa la optimización de imágenes, esto se
-   enciende sin avisar.
-9. **`vite`** — devDependency, nunca se despliega.
-
-### Cerrado
-
-- ~~`lib/moodle-export-no-imports.ts` muerto~~ → borrado en `dcaece1`.
-- ~~Tipos del borde de Sentry~~ → alineados en `dcaece1`.
-- ~~`test-export.ts` y `pnpm-lock.yaml` sueltos en la raíz~~ → borrados en `cff5453`,
-  con `packageManager: npm@10.9.8` declarado para que no vuelva a haber ambigüedad de
-  gestor. Ojo: CI fija Node 22 (que trae ese npm) mientras el entorno local corre Node 24
-  / npm 11 — si alguna vez se habilita Corepack, esa diferencia pasa a ser un error duro.
-- ~~`tsconfig.tsbuildinfo` trackeado~~ → ignorado en `b4917c8`.
+5. **`postcss`** — sólo build, y todo el CSS es propio. Se arregla solo con el bump de `next`.
+6. **`sharp`** — camino de código muerto por `images.unoptimized: true`.
+7. **`vite`** — devDependency, nunca se despliega.

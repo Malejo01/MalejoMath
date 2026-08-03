@@ -2,10 +2,10 @@ import { withSentryConfig } from '@sentry/nextjs'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
+    // Ojo: esto apaga el pipeline de optimización de imágenes, que es lo único
+    // que invoca a `sharp`. Reactivarlo enciende las CVEs de libvips que hoy
+    // están en un camino de código muerto — ver docs/deuda-tecnica.md.
     unoptimized: true,
   },
 }
