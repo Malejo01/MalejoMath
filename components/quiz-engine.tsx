@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -13,7 +13,7 @@ import { AnswerInput, emptySelectionFor, type AnswerSelection } from './quiz-ans
 import { AnswerRecap, answerRecapLine } from './answer-recap'
 import { isCorrectMultipleChoice, isCorrectNumeric, isCorrectTrueFalse } from '@/lib/answer-grading'
 import { cn } from '@/lib/utils'
-import type { Answer, MultipleChoiceQuestion } from '@/lib/types'
+import type { Answer, Question } from '@/lib/types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,18 +26,46 @@ import {
 } from '@/components/ui/alert-dialog'
 
 type AnswerState = {
-  selection: AnswerSelection | null
+  selection: AnswerSelection
   submitted: boolean
   isCorrect: boolean | null
 }
 
 export function QuizEngine() {
-  const { currentQuiz, answerQuestion, nextQuestion, previousQuestion, setActiveView, finishQuiz, updateQuestions } = useAppStore()
-  const { questions, currentIndex, config } = currentQuiz
+  const { currentQuiz } = useAppStore()
+  const { questions, currentIndex } = currentQuiz
   const currentQuestion = questions[currentIndex]
 
+  if (!currentQuestion) {
+    return null
+  }
+
+  /**
+   * Every piece of per-question state (the selection, whether it was already
+   * submitted, the AI feedback, the teacher's edit drafts) is seeded from the
+   * question it belongs to, so it must not outlive that question. Remounting
+   * on each change is what enforces that: `key` resets the state during the
+   * same render that first sees the new question.
+   *
+   * This used to be a `useEffect` keyed on `currentIndex`, which cannot work —
+   * effects run *after* their render, so the render that first saw question
+   * N+1 still held question N's selection and reached `buildAnswer` with a
+   * mismatched pair, throwing "Selection type does not match question type"
+   * during render, straight past every handler and into the error boundary.
+   * It fired on any type transition, which is why no non-multiple_choice
+   * answer ever made it into `quiz_answers`. Both `nextQuestion` and the
+   * teacher preview's `previousQuestion` went through it; the remount covers
+   * the two by construction. See components/quiz-engine.test.tsx.
+   */
+  return <QuizQuestionRunner key={`${currentIndex}:${currentQuestion.id}`} question={currentQuestion} />
+}
+
+function QuizQuestionRunner({ question: currentQuestion }: { question: Question }) {
+  const { currentQuiz, answerQuestion, nextQuestion, previousQuestion, setActiveView, finishQuiz, updateQuestions } = useAppStore()
+  const { questions, currentIndex, config } = currentQuiz
+
   const [answerState, setAnswerState] = useState<AnswerState>({
-    selection: currentQuestion ? emptySelectionFor(currentQuestion) : null,
+    selection: emptySelectionFor(currentQuestion),
     submitted: false,
     isCorrect: null
   })
@@ -53,16 +81,6 @@ export function QuizEngine() {
   const [explanationDraft, setExplanationDraft] = useState('')
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingAction, setPendingAction] = useState<'exit' | 'next' | 'prev' | 'cancel-edit' | null>(null)
-
-  // Reset local per-question state whenever the question changes.
-  useEffect(() => {
-    if (!currentQuestion) return
-    setAnswerState({ selection: emptySelectionFor(currentQuestion), submitted: false, isCorrect: null })
-    setShortAnswerFeedback(null)
-    setDetailedExplanation(null)
-    setShowExplanationModal(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex])
 
   const isPreviewMode = Boolean(config?.previewOnly)
   const progress = isPreviewMode
@@ -94,16 +112,19 @@ export function QuizEngine() {
     }
   }, [isFirstQuestion, isLastQuestion, nextQuestion, previousQuestion, setActiveView])
 
-  /** Editing invalidates whatever the teacher had already answered here. */
+  /**
+   * Editing invalidates whatever the teacher had already answered here. The
+   * question keeps its id through an edit, so this is not covered by the
+   * remount in QuizEngine and still has to be done by hand.
+   */
   const resetAnswerState = useCallback(() => {
-    if (!currentQuestion) return
     setAnswerState({ selection: emptySelectionFor(currentQuestion), submitted: false, isCorrect: null })
     setShortAnswerFeedback(null)
     setDetailedExplanation(null)
   }, [currentQuestion])
 
   const handleStartEditQuestion = useCallback(() => {
-    if (!isPreviewMode || !currentQuestion || currentQuestion.type !== 'multiple_choice') return
+    if (!isPreviewMode || currentQuestion.type !== 'multiple_choice') return
     setQuestionDraft(currentQuestion.question)
     setOptionsDraft([...currentQuestion.options])
     setCorrectAnswerDraft(currentQuestion.correctAnswer)
@@ -113,7 +134,7 @@ export function QuizEngine() {
   }, [isPreviewMode, currentQuestion, resetAnswerState])
 
   const handleSaveEditedQuestion = useCallback(() => {
-    if (!isPreviewMode || !currentQuestion || currentQuestion.type !== 'multiple_choice') return
+    if (!isPreviewMode || currentQuestion.type !== 'multiple_choice') return
 
     const nextQuestions = questions.map((question, index) => (
       index === currentIndex && question.type === 'multiple_choice'
@@ -146,7 +167,7 @@ export function QuizEngine() {
   }, [answerState.submitted, isEditingQuestion])
 
   /** Builds the typed Answer that gets persisted/recapped, given the current question + selection. */
-  const buildAnswer = useCallback((question: NonNullable<typeof currentQuestion>, selection: AnswerSelection, isCorrect: boolean): Answer => {
+  const buildAnswer = useCallback((question: Question, selection: AnswerSelection, isCorrect: boolean): Answer => {
     const base = {
       questionId: question.id,
       questionText: question.question,
@@ -172,7 +193,6 @@ export function QuizEngine() {
 
   const handleSubmit = useCallback(async () => {
     if (isEditingQuestion) return
-    if (!currentQuestion || !answerState.selection) return
     const selection = answerState.selection
 
     if (currentQuestion.type === 'multiple_choice' && selection.type === 'multiple_choice') {
@@ -265,13 +285,12 @@ export function QuizEngine() {
 
   // Revancha and "Explicar mi error" both need a fully-formed Answer to recap —
   // short_answer is excluded from both in this phase (gated at render time).
-  const currentAnswer = currentQuestion && answerState.selection && answerState.submitted
+  const currentAnswer = answerState.submitted
     ? buildAnswer(currentQuestion, answerState.selection, answerState.isCorrect ?? false)
     : null
 
   const isAnswerReady = (() => {
     const selection = answerState.selection
-    if (!selection) return false
     switch (selection.type) {
       case 'multiple_choice':
       case 'true_false':
@@ -283,7 +302,7 @@ export function QuizEngine() {
   })()
 
   const handleExplainError = useCallback(async () => {
-    if (!currentQuestion || !currentAnswer || currentQuestion.type === 'short_answer') return
+    if (!currentAnswer || currentQuestion.type === 'short_answer') return
     setModalInitialMode('explain')
 
     if (detailedExplanation) {
@@ -351,10 +370,6 @@ export function QuizEngine() {
       setActiveView('dashboard')
     }
   }, [isPreviewMode, requestOrRunAction, setActiveView])
-
-  if (!currentQuestion) {
-    return null
-  }
 
   return (
     <div className="min-h-screen relative flex flex-col">
@@ -458,26 +473,24 @@ export function QuizEngine() {
           </Card>
 
           {/* Answer input */}
-          {answerState.selection && (
-            <AnswerInput
-              question={currentQuestion}
-              selection={answerState.selection}
-              submitted={answerState.submitted}
-              onChange={handleAnswerChange}
-              isCorrect={answerState.submitted ? answerState.isCorrect : undefined}
-              editing={isEditingQuestion && currentQuestion.type === 'multiple_choice'}
-              editedOptions={optionsDraft}
-              editedCorrectAnswer={correctAnswerDraft}
-              onEditCorrectAnswer={setCorrectAnswerDraft}
-              onEditOption={(index, value) => {
-                setOptionsDraft((prev) => {
-                  const next = [...prev]
-                  next[index] = value
-                  return next
-                })
-              }}
-            />
-          )}
+          <AnswerInput
+            question={currentQuestion}
+            selection={answerState.selection}
+            submitted={answerState.submitted}
+            onChange={handleAnswerChange}
+            isCorrect={answerState.submitted ? answerState.isCorrect : undefined}
+            editing={isEditingQuestion && currentQuestion.type === 'multiple_choice'}
+            editedOptions={optionsDraft}
+            editedCorrectAnswer={correctAnswerDraft}
+            onEditCorrectAnswer={setCorrectAnswerDraft}
+            onEditOption={(index, value) => {
+              setOptionsDraft((prev) => {
+                const next = [...prev]
+                next[index] = value
+                return next
+              })
+            }}
+          />
 
           {isGradingShortAnswer && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground px-1">
@@ -726,7 +739,7 @@ export function QuizEngine() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {showExplanationModal && currentQuestion && currentAnswer && (
+      {showExplanationModal && currentAnswer && (
         <ExplanationModal
           open={showExplanationModal}
           onClose={() => setShowExplanationModal(false)}

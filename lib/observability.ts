@@ -78,6 +78,35 @@ export function captureRouteFailure(
 }
 
 /**
+ * Se rompió en el cliente una invariante que el sistema de tipos da por cierta
+ * pero que TypeScript no puede sostener en runtime — típicamente una unión
+ * discriminada que llegó desalineada.
+ *
+ * Existe porque el modo de falla natural de estos casos es el silencio: el
+ * componente cae en su rama por defecto, devuelve `null`, y el alumno se queda
+ * con una pregunta sin nada para clickear. Nadie abre un ticket por eso, y en
+ * el panel no aparece nada. Esto lo convierte en un evento visible sin tener
+ * que romperle la pantalla al alumno para enterarnos.
+ *
+ * No lleva texto del enunciado ni de la respuesta: sólo los discriminantes, que
+ * es lo único que hace falta para reproducirlo.
+ */
+export function captureClientInvariant(
+  error: unknown,
+  context: { component: string; expected: string; received: string }
+): void {
+  safeCapture(error, (scope) => {
+    scope.setLevel('error')
+    scope.setTag('error_kind', 'client_invariant')
+    scope.setTag('component', context.component)
+    scope.setContext('invariante', {
+      esperado: context.expected,
+      recibido: context.received,
+    })
+  })
+}
+
+/**
  * Falló la extracción de texto de un archivo subido por un docente.
  *
  * Cada formato tiene su propia librería y sus propios modos de romperse (un PDF

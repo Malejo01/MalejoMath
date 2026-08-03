@@ -1,6 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
 import type { Question } from '@/lib/types'
+import { captureClientInvariant } from '@/lib/observability'
 import { MultipleChoiceInput } from './multiple-choice-input'
 import { ShortAnswerInput } from './short-answer-input'
 import { TrueFalseInput } from './true-false-input'
@@ -108,5 +110,29 @@ export function AnswerInput({
     )
   }
 
-  return null
+  return <MismatchedSelection questionType={question.type} selectionType={selection.type} />
+}
+
+/**
+ * Unreachable by construction: QuizEngine remounts this whole subtree per
+ * question, so the selection is always the empty one built from the question
+ * being rendered. It stays here because the only thing worse than this state
+ * existing is it existing quietly — the previous `return null` left the
+ * student staring at a statement with no input and left us with nothing in the
+ * panel. If a new question type ever lands in `Question` without its branch
+ * above, this is what tells us.
+ */
+function MismatchedSelection({ questionType, selectionType }: { questionType: string; selectionType: string }) {
+  useEffect(() => {
+    captureClientInvariant(
+      new Error(`AnswerInput: la selección "${selectionType}" no corresponde a una pregunta "${questionType}"`),
+      { component: 'AnswerInput', expected: questionType, received: selectionType },
+    )
+  }, [questionType, selectionType])
+
+  return (
+    <p className="text-sm text-muted-foreground border-2 border-dashed border-border rounded-xl p-4">
+      No se pudo mostrar el campo de respuesta para esta pregunta. Ya nos avisamos del problema.
+    </p>
+  )
 }
