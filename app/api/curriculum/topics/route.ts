@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from '@/lib/db'
 import { DEFAULT_JURISDICTION } from '@/lib/curriculum-config'
+import { captureRouteFailure } from '@/lib/observability'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,8 +24,26 @@ interface AxisRow {
  * romper el `.map`/`.join` que lo consume.
  */
 function toTopicList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string')
+  if (!Array.isArray(value)) {
+    if (value != null) {
+      captureRouteFailure(new Error('Formato de temas inválido (no es array)'), {
+        endpoint: '/api/curriculum/topics',
+        operation: 'toTopicList'
+      })
+    }
+    return []
+  }
+  
+  const validTopics = value.filter((item): item is string => typeof item === 'string')
+  
+  if (validTopics.length !== value.length) {
+    captureRouteFailure(new Error('Formato de temas contiene elementos que no son string'), {
+      endpoint: '/api/curriculum/topics',
+      operation: 'toTopicList'
+    })
+  }
+  
+  return validTopics
 }
 
 // GET /api/curriculum/topics?nivel=Secundario&grado=1er+Año&materia=Matemática&jurisdiccion=Salta
