@@ -1,17 +1,8 @@
-import { neon } from '@neondatabase/serverless'
-import * as dotenv from 'dotenv'
+import { resolveDbTarget } from './lib/db-target'
 import { DEFAULT_JURISDICTION } from '../lib/curriculum-config'
 
-dotenv.config({ path: '.env.local' })
-
 async function run() {
-  const dbUrl = process.env.DATABASE_URL
-  if (!dbUrl) {
-    console.error('DATABASE_URL no encontrada en .env.local')
-    process.exit(1)
-  }
-
-  const sql = neon(dbUrl)
+  const { sql } = await resolveDbTarget({ action: 'fix de grados de Tutoría (borra filas de curriculum)' })
 
   console.log('Actualizando la materia "Espacio Institucional de Tutoría y Espacio de Apoyo" para que exista en 1er, 2do, 3er, 4to y 5to Año...')
 

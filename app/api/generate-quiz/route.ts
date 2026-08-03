@@ -2,9 +2,9 @@ import { generateObject, generateText, type RepairTextFunction } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import { buildEducationSystemPrompt } from '@/lib/education-context'
-import { sql } from '@/lib/db'
-import { getViewer, type Viewer } from '@/lib/auth-session'
-import { GUEST_DAILY_GENERATION_LIMIT } from '@/lib/classrooms'
+import { guardAiCall } from '@/lib/ai-guard'
+import { captureAiSchemaFailure, captureRouteFailure } from '@/lib/observability'
+import { sumUsage, type AiSdkUsage } from '@/lib/ai-usage'
 import { normalizeQuestionText, numericSignature } from '@/lib/question-dedup'
 
 const google = createGoogleGenerativeAI({
@@ -264,6 +264,7 @@ async function generateQuizBatchWithFallback({
   nivel,
   grado,
   questionTypes,
+  onUsage,
 }: {
   subject: string
   curriculum: string
@@ -277,6 +278,12 @@ async function generateQuizBatchWithFallback({
   nivel?: string
   grado?: string
   questionTypes: QuestionType[]
+  /**
+   * Se invoca por CADA llamada al modelo, incluidas las del camino de fallback.
+   * Una sola request puede gastar tres veces lo que sugiere su única fila de
+   * rate limit, y el dashboard tiene que reflejarlo.
+   */
+  onUsage?: (usage: AiSdkUsage | undefined) => void
 }) {
   const educationPrompt = buildEducationSystemPrompt({
     nivel,
@@ -319,7 +326,7 @@ ${pedagogyNote}
 IMPORTANTE: Responde SOLO JSON válido comenzando con { y terminando con }`
 
   try {
-    const { object } = await generateObject({
+    const { object, usage } = await generateObject({
       model: google('gemini-2.5-flash'),
       schema: quizSchema,
       schemaName: 'quizQuestions',
@@ -330,10 +337,20 @@ IMPORTANTE: Responde SOLO JSON válido comenzando con { y terminando con }`
       maxOutputTokens: 8000,
       temperature: 0.3,
     })
+    onUsage?.(usage)
 
     console.log('[generateObject] Success! Questions:', object.questions.length)
     return normalizeQuestionSetLogicalNotation(object.questions)
   } catch (primaryError: any) {
+    // El alumno no ve nada raro: el fallback suele salvar la generación. Pero
+    // cada vez que esto pasa se paga el doble de tokens y baja la calidad, así
+    // que un pico acá es la señal de que cambió el modelo o el prompt.
+    captureAiSchemaFailure(primaryError, {
+      endpoint: '/api/generate-quiz',
+      fallback: 'generateText',
+      nivel,
+      subject,
+    })
     console.warn('[generateObject] Primary parse failed, retrying with generateText:', primaryError?.message)
 
     let rawText = ''
@@ -347,6 +364,7 @@ IMPORTANTE: Responde SOLO JSON válido comenzando con { y terminando con }`
           temperature: 0.2,
         })
         rawText = response.text
+        onUsage?.(response.usage)
         console.log(`[generateText] Attempt ${retryAttempt + 1} succeeded, length: ${rawText.length}`)
         break
       } catch (textGenErr) {
@@ -463,6 +481,7 @@ async function generateQuizBatch({
   nivel,
   grado,
   questionTypes,
+  onUsage,
 }: {
   subject: string
   curriculum: string
@@ -476,6 +495,7 @@ async function generateQuizBatch({
   nivel?: string
   grado?: string
   questionTypes: QuestionType[]
+  onUsage?: (usage: AiSdkUsage | undefined) => void
 }) {
   return generateQuizBatchWithFallback({
     subject,
@@ -490,6 +510,7 @@ async function generateQuizBatch({
     nivel,
     grado,
     questionTypes,
+    onUsage,
   })
 }
 
@@ -550,50 +571,7 @@ function getSpecialistRole(subject: string): string {
 }
 
 
-/**
- * Guests reach this route with nothing but an aula code, so a leaked code
- * could otherwise burn the Gemini quota. Signed-in users are unaffected.
- * Counted over a rolling 24h window rather than a calendar day, so a student
- * can't reset their allowance at midnight and immediately spend it again.
- */
-async function assertGuestGenerationAllowed(viewer: Viewer | null): Promise<Response | null> {
-  if (!viewer?.isGuest) return null
-
-  const rows = (await sql`
-    SELECT COUNT(*)::int AS used
-    FROM ai_generation_log
-    WHERE user_id = ${viewer.id} AND created_at > NOW() - INTERVAL '24 hours'
-  `) as { used: number }[]
-
-  const used = Number(rows[0]?.used ?? 0)
-  if (used < GUEST_DAILY_GENERATION_LIMIT) return null
-
-  return Response.json(
-    {
-      questions: [],
-      error: `Como invitado podés generar ${GUEST_DAILY_GENERATION_LIMIT} cuestionarios por día. Iniciá sesión con Google para practicar sin límite — tu progreso se conserva.`,
-      guestLimitReached: true,
-    },
-    { status: 429 }
-  )
-}
-
-async function recordGuestGeneration(viewer: Viewer | null): Promise<void> {
-  if (!viewer?.isGuest) return
-
-  try {
-    await sql`INSERT INTO ai_generation_log (user_id, created_at) VALUES (${viewer.id}, NOW())`
-  } catch (error) {
-    // Never fail a successful generation over bookkeeping.
-    console.error('[generate-quiz] no se pudo registrar el uso del invitado', error)
-  }
-}
-
 export async function POST(req: Request) {
-  const viewer = await getViewer()
-  const guestLimitResponse = await assertGuestGenerationAllowed(viewer)
-  if (guestLimitResponse) return guestLimitResponse
-
   const {
     subject,
     subjectUnits = [],
@@ -652,6 +630,19 @@ export async function POST(req: Request) {
         }
       }
     }
+  }
+
+  // Recién acá, con el nivel ya resuelto, para que el mensaje de corte le hable
+  // a un chico de primaria distinto que a un estudiante de terciario. Todo lo
+  // anterior es parseo del body: no cuesta tokens.
+  const guard = await guardAiCall({ bucket: 'quiz_generation', nivel, errorBody: () => ({ questions: [] }) })
+  if (!guard.ok) return guard.response
+
+  // Una request puede disparar hasta tres tandas (y el modo mixto, dos series
+  // de tres). El límite cuenta la request; el costo tiene que sumarlas todas.
+  const usageParts: (AiSdkUsage | undefined)[] = []
+  const collectUsage = (usage: AiSdkUsage | undefined) => {
+    usageParts.push(usage)
   }
 
   const topicsText = topics.map((t: { id: string; name: string }) => `- ${t.name}`).join('\n')
@@ -736,6 +727,7 @@ situaciones diferentes.`
             nivel,
             grado,
             questionTypes: finalQuestionTypes,
+            onUsage: collectUsage,
           })
 
           for (const question of teoricoBatch) {
@@ -761,6 +753,7 @@ situaciones diferentes.`
             nivel,
             grado,
             questionTypes: finalQuestionTypes,
+            onUsage: collectUsage,
           })
 
           for (const question of practicoBatch) {
@@ -772,6 +765,9 @@ situaciones diferentes.`
       }
 
       if (teoricoCollected.length < teoricoCount || practicoCollected.length < practicoCount) {
+        // Los tokens ya se gastaron aunque el resultado no sirva: se cierra la
+        // fila con lo consumido, no se descarta.
+        await guard.finish(sumUsage(...usageParts))
         return Response.json({
           questions: [],
           error: 'No se pudo generar un cuestionario mixto con suficiente variedad. Intenta otra vez.'
@@ -781,7 +777,7 @@ situaciones diferentes.`
       const mixedQuestions = interleaveQuestions(teoricoCollected, practicoCollected, questionCount)
       const shuffledMixedQuestions = mixedQuestions.map((q, idx) => shuffleAndRenumber(q, `q${idx + 1}`))
 
-      await recordGuestGeneration(viewer)
+      await guard.finish(sumUsage(...usageParts))
       return Response.json({ questions: shuffledMixedQuestions })
     }
 
@@ -800,6 +796,7 @@ situaciones diferentes.`
         nivel,
         grado,
         questionTypes: finalQuestionTypes,
+        onUsage: collectUsage,
       })
 
       console.log('[generateObject] Success! Questions:', generatedQuestions.length)
@@ -816,6 +813,7 @@ situaciones diferentes.`
     }
 
     if (collectedQuestions.length < questionCount) {
+      await guard.finish(sumUsage(...usageParts))
       return Response.json({
         questions: [],
         error: 'No se pudo generar un nuevo cuestionario completamente distinto. Intenta otra vez.'
@@ -824,9 +822,19 @@ situaciones diferentes.`
 
     const shuffledQuestions = collectedQuestions.map((q, idx) => shuffleAndRenumber(q, `q${idx + 1}`))
 
-    await recordGuestGeneration(viewer)
+    await guard.finish(sumUsage(...usageParts))
     return Response.json({ questions: shuffledQuestions })
   } catch (error: any) {
+    // La fila queda en 'error' y sigue contando: si Gemini alcanzó a responder
+    // antes de romperse, ese consumo ya se facturó.
+    await guard.fail()
+
+    captureRouteFailure(error, {
+      endpoint: '/api/generate-quiz',
+      status: 500,
+      operation: 'generate_quiz',
+    })
+
     console.error('[POST] Final error:', {
       message: error?.message,
       name: error?.name,

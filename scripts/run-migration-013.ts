@@ -1,16 +1,7 @@
-import { neon } from '@neondatabase/serverless'
-import * as dotenv from 'dotenv'
-
-dotenv.config({ path: '.env.local' })
+import { resolveDbTarget } from './lib/db-target'
 
 async function run() {
-  const dbUrl = process.env.DATABASE_URL
-  if (!dbUrl) {
-    console.error('DATABASE_URL no encontrada en .env.local')
-    process.exit(1)
-  }
-
-  const sql = neon(dbUrl)
+  const { sql } = await resolveDbTarget({ action: 'migración 013' })
 
   console.log('Ejecutando migración 013 (tipos de pregunta) en la base de datos Neon...')
 

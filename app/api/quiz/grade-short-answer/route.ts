@@ -2,6 +2,8 @@ import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { getEducationContext } from '@/lib/education-context'
+import { guardAiCall } from '@/lib/ai-guard'
+import { captureAiSchemaFailure } from '@/lib/observability'
 
 const gradeSchema = z.object({
   isCorrect: z.boolean(),
@@ -15,10 +17,13 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Parametros invalidos' }, { status: 400 })
   }
 
+  const guard = await guardAiCall({ bucket: 'grading', nivel })
+  if (!guard.ok) return guard.response
+
   const eduCtx = getEducationContext(nivel, grado, 'la materia')
 
   try {
-    const { object } = await generateObject({
+    const { object, usage } = await generateObject({
       model: google('gemini-2.5-flash'),
       schema: gradeSchema,
       schemaName: 'shortAnswerGrade',
@@ -38,8 +43,17 @@ Indica si la respuesta del estudiante es conceptualmente correcta (isCorrect) y 
       maxOutputTokens: 500,
     })
 
+    await guard.finish(usage)
     return Response.json(object)
   } catch (error) {
+    await guard.fail()
+    // Sin fallback: si la IA no corrige, el alumno se queda sin nota en esa
+    // pregunta. Es el que más directo impacta en lo que ve un estudiante.
+    captureAiSchemaFailure(error, {
+      endpoint: '/api/quiz/grade-short-answer',
+      fallback: 'none',
+      nivel,
+    })
     console.error('[grade-short-answer] Error:', error)
     return Response.json(
       { error: 'No se pudo corregir la respuesta', details: error instanceof Error ? error.message : String(error) },

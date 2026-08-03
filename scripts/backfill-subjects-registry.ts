@@ -1,3 +1,4 @@
+import { resolveDbTarget, type Sql } from './lib/db-target'
 /**
  * scripts/backfill-subjects-registry.ts
  *
@@ -11,12 +12,9 @@
  * Usage:  npx tsx scripts/backfill-subjects-registry.ts
  */
 
-import { neon } from '@neondatabase/serverless'
-import * as dotenv from 'dotenv'
 
-dotenv.config({ path: '.env.local' })
-
-const sql = neon(process.env.DATABASE_URL!)
+// Asignado al inicio de run(), una vez que el guardrail confirmó el destino.
+let sql!: Sql
 
 const COMBINING_MARK_MIN = 0x0300
 const COMBINING_MARK_MAX = 0x036f
@@ -46,6 +44,8 @@ function slugifySubject(value: string): string {
 }
 
 async function run() {
+  ;({ sql } = await resolveDbTarget({ action: 'backfill del registro de materias' }))
+
   console.log('Sembrando registro de materias desde curriculum...')
 
   const distinctSubjects = await sql`

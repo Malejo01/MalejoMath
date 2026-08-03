@@ -2,6 +2,9 @@ import { generateObject, generateText, type RepairTextFunction } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import { buildEducationSystemPrompt } from '@/lib/education-context'
+import { guardAiCall } from '@/lib/ai-guard'
+import { sumUsage, type AiSdkUsage } from '@/lib/ai-usage'
+import { captureAiSchemaFailure, captureRouteFailure } from '@/lib/observability'
 
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -21,6 +24,10 @@ const repairJson: RepairTextFunction = async ({ text }) => {
 }
 
 export async function POST(req: Request) {
+  // El catch de abajo también atrapa errores previos al guard (body inválido),
+  // cuando todavía no hay fila que marcar — de ahí la referencia opcional.
+  let markFailed: (() => Promise<void>) | null = null
+
   try {
     const {
       question: originalQuestion,
@@ -34,6 +41,14 @@ export async function POST(req: Request) {
       grado,
       misconceptionText,
     } = await req.json()
+
+    const guard = await guardAiCall({ bucket: 'feedback', nivel })
+    if (!guard.ok) return guard.response
+    markFailed = guard.fail
+
+    // El camino de fallback vuelve a llamar al modelo, así que el costo son las
+    // dos llamadas aunque el límite cuente una sola revancha.
+    const usageParts: (AiSdkUsage | undefined)[] = []
 
     const educationPrompt = buildEducationSystemPrompt({
       nivel,
@@ -64,7 +79,7 @@ OBJETIVO PEDAGÓGICO:
     const userPrompt = `Genera 1 pregunta de revancha para ${subject || 'la materia'} - Tema: ${topicName || topic || 'General'}.`
 
     try {
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: google('gemini-2.5-flash'),
         schema: singleQuestionSchema,
         schemaName: 'revanchaQuestion',
@@ -75,6 +90,8 @@ OBJETIVO PEDAGÓGICO:
         maxOutputTokens: 2000,
         temperature: 0.4,
       })
+      usageParts.push(usage)
+      await guard.finish(sumUsage(...usageParts))
 
       return Response.json({
         question: {
@@ -89,20 +106,30 @@ OBJETIVO PEDAGÓGICO:
         }
       })
     } catch (primaryErr) {
+      captureAiSchemaFailure(primaryErr, {
+        endpoint: '/api/quiz/revancha',
+        fallback: 'generateText',
+        nivel,
+        subject,
+      })
       console.warn('[revancha] Primary parse failed, using generateText fallback:', primaryErr)
-      const { text } = await generateText({
+      // Los tokens de la llamada que falló se pierden (el SDK lanza sin
+      // devolver usage), así que el costo de este camino queda subestimado.
+      const { text, usage } = await generateText({
         model: google('gemini-2.5-flash'),
         system: systemPrompt,
         prompt: userPrompt,
         maxOutputTokens: 2000,
         temperature: 0.3,
       })
+      usageParts.push(usage)
 
       const cleaned = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
       const match = cleaned.match(/\{[\s\S]*\}/)
       if (!match) throw new Error('No se pudo estructurar la pregunta de revancha.')
 
       const parsed = JSON.parse(match[0])
+      await guard.finish(sumUsage(...usageParts))
       return Response.json({
         question: {
           id: `revancha-${Date.now()}`,
@@ -117,6 +144,12 @@ OBJETIVO PEDAGÓGICO:
       })
     }
   } catch (error: any) {
+    await markFailed?.()
+    captureRouteFailure(error, {
+      endpoint: '/api/quiz/revancha',
+      status: 500,
+      operation: 'generate_revancha',
+    })
     console.error('[POST /api/quiz/revancha] Error:', error)
     return Response.json({ error: error?.message || 'Error al generar pregunta de revancha' }, { status: 500 })
   }

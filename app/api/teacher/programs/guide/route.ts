@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
 import { sql } from '@/lib/db'
+import { guardAiCall } from '@/lib/ai-guard'
+import { captureAiSchemaFailure, captureFileParsingFailure, captureRouteFailure } from '@/lib/observability'
 
 export const runtime = 'nodejs'
 
@@ -171,6 +173,14 @@ async function extractTextFromImage(buffer: Buffer): Promise<string> {
   const tesseract = await import('tesseract.js')
   const result = await tesseract.recognize(buffer, 'spa+eng')
   return String(result?.data?.text || '').trim()
+}
+
+/** Qué librería atiende cada formato, para etiquetar el error en Sentry. */
+function parserForMime(mimeType: string): 'pdf-parse' | 'mammoth' | 'word-extractor' | 'tesseract' {
+  if (mimeType === 'application/pdf') return 'pdf-parse'
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'mammoth'
+  if (mimeType === 'application/msword') return 'word-extractor'
+  return 'tesseract'
 }
 
 async function extractTextByMime(buffer: Buffer, mimeType: string): Promise<string> {
@@ -491,12 +501,28 @@ export async function POST(req: Request) {
       )
     }
 
+    // Con el archivo temporal ya localizado: si no existe, la request murió
+    // antes de costar nada y no tiene por qué consumir cupo.
+    const guard = await guardAiCall({ bucket: 'program_extraction', actor: 'docente' })
+    if (!guard.ok) return guard.response
+
     const upload = uploads[0] as { file_name: string; mime_type: string; file_data: Buffer | Uint8Array }
     const mimeType = normalizeStoredMimeType(upload.file_name, upload.mime_type)
     const fileBuffer = Buffer.isBuffer(upload.file_data) ? upload.file_data : Buffer.from(upload.file_data)
 
-    const extractedText = await extractTextByMime(fileBuffer, mimeType)
+    const extractedText = await extractTextByMime(fileBuffer, mimeType).catch((parsingError) => {
+      captureFileParsingFailure(parsingError, {
+        parser: parserForMime(mimeType),
+        mimeType,
+        sizeBytes: fileBuffer.length,
+      })
+      // Devolver vacío deja que el chequeo de abajo responda el 422 de siempre,
+      // en vez de que el error caiga en el catch genérico como un 500.
+      return ''
+    })
+
     if (!extractedText || extractedText.length < 100) {
+      await guard.fail()
       return NextResponse.json(
         { error: 'No se pudo extraer suficiente texto para guiado' },
         { status: 422 }
@@ -527,7 +553,7 @@ export async function POST(req: Request) {
     let extractionMethod: 'ai' | 'heuristic' = 'ai'
 
     try {
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: google('gemini-2.5-flash'),
         schema: continuationSchema,
         schemaName: 'guidedProgramContinuation',
@@ -555,7 +581,14 @@ ${section.slice(0, 12000)}`,
       })
 
       parsed = continuationSchema.parse(object)
-    } catch {
+      await guard.finish(usage)
+    } catch (schemaError) {
+      captureAiSchemaFailure(schemaError, {
+        endpoint: '/api/teacher/programs/guide',
+        fallback: 'heuristic',
+      })
+      // El heurístico no llama al modelo; el intento fallido igual se facturó.
+      await guard.fail()
       parsed = parseHeuristicProgram(aroundAnchor)
       extractionMethod = 'heuristic'
     }
@@ -581,9 +614,15 @@ ${section.slice(0, 12000)}`,
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
+      // Body mal formado: es culpa del cliente, no un incidente. No se reporta.
       return NextResponse.json({ error: 'Parametros de guiado invalidos', details: error.flatten() }, { status: 400 })
     }
 
+    captureRouteFailure(error, {
+      endpoint: '/api/teacher/programs/guide',
+      status: 500,
+      operation: 'guide_program',
+    })
     return NextResponse.json(
       {
         error: 'No se pudo generar la guia de autocompletado',

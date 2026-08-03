@@ -3,13 +3,13 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
- * Migration 015 is long enough that keeping the SQL in one place beats
- * duplicating it here. Statements are split on ";\n" boundaries because the
- * neon serverless driver runs one statement per call.
+ * Migración 016 (log de uso de IA). Mismo runner que la 015: el SQL vive en su
+ * propio archivo y se parte en ";\n" porque el driver serverless de neon manda
+ * una sentencia por llamada.
  */
 async function run() {
-  const { sql } = await resolveDbTarget({ action: 'migración 015' })
-  const file = readFileSync(join(process.cwd(), 'scripts', '015-classrooms.sql'), 'utf8')
+  const { sql } = await resolveDbTarget({ action: 'migración 016' })
+  const file = readFileSync(join(process.cwd(), 'scripts', '016-ai-usage-log.sql'), 'utf8')
 
   const statements = file
     .split(/;\s*\n/)
@@ -17,7 +17,7 @@ async function run() {
     .map((chunk) => chunk.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n').trim())
     .filter((chunk) => chunk.length > 0)
 
-  console.log(`Ejecutando migración 015 (aulas) — ${statements.length} sentencias...`)
+  console.log(`Ejecutando migración 016 (log de uso de IA) — ${statements.length} sentencias...`)
 
   for (const [index, statement] of statements.entries()) {
     const label = statement.replace(/\s+/g, ' ').slice(0, 70)
@@ -32,7 +32,7 @@ async function run() {
     }
   }
 
-  console.log('✅ ¡Migración 015 ejecutada con éxito en PostgreSQL / Neon!')
+  console.log('✅ ¡Migración 016 ejecutada con éxito en PostgreSQL / Neon!')
 }
 
 run().catch((err) => {

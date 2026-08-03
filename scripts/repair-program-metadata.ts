@@ -18,11 +18,8 @@
  *
  * Usage: npx tsx scripts/repair-program-metadata.ts [--apply]
  */
-import { neon } from '@neondatabase/serverless'
-import * as dotenv from 'dotenv'
+import { resolveDbTarget } from './lib/db-target'
 import { canonicalGrado, extractGradoNumber } from '../lib/grado'
-
-dotenv.config({ path: '.env.local' })
 
 type Nivel = 'Primario' | 'Secundario' | 'Superior'
 
@@ -55,14 +52,8 @@ function degreeIsRedundant(degree: string, academicYear: string, level: string):
 }
 
 async function run() {
-  const dbUrl = process.env.DATABASE_URL
-  if (!dbUrl) {
-    console.error('DATABASE_URL no encontrada en .env.local')
-    process.exit(1)
-  }
-
   const apply = process.argv.includes('--apply')
-  const sql = neon(dbUrl)
+  const { sql } = await resolveDbTarget({ action: 'reparación de metadata de programas' })
 
   // Curriculum spellings per nivel, so we snap to what the DB actually stores
   // rather than to our own guess.

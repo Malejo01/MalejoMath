@@ -1,5 +1,7 @@
 ﻿import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
+import { guardAiCall } from '@/lib/ai-guard'
+import { captureAiSchemaFailure, captureFileParsingFailure, captureRouteFailure } from '@/lib/observability'
 import { z } from 'zod'
 import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
@@ -332,21 +334,53 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'El archivo supera el limite de 5MB' }, { status: 400 })
     }
 
+    // Tipo y tamaño ya validados: un archivo rechazado no consume cupo. El rol
+    // va explícito porque requireTeacher acaba de leerlo de la base, y el JWT
+    // podría estar desactualizado si el docente cambió de rol recién.
+    const guard = await guardAiCall({ bucket: 'program_extraction', actor: 'docente' })
+    if (!guard.ok) return guard.response
+
     const arrayBuffer = await file.arrayBuffer()
     const fileBuffer = Buffer.from(arrayBuffer)
 
+    // Cada formato trae su propia librería y sus propias formas de romperse (un
+    // PDF escaneado, un .doc de Word 97, un OCR que no encuentra nada). El tag
+    // por parser es lo que después permite ver si falla un formato puntual en
+    // vez de mirar un montón de errores genéricos de "no se pudo procesar".
+    const parser = normalizedMimeType === 'application/pdf'
+      ? 'pdf-parse'
+      : normalizedMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ? 'mammoth'
+        : normalizedMimeType === 'application/msword'
+          ? 'word-extractor'
+          : 'tesseract'
+
     let extractedText = ''
-    if (normalizedMimeType === 'application/pdf') {
-      extractedText = await extractTextFromPdf(fileBuffer)
-    } else if (normalizedMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      extractedText = await extractTextFromDocx(fileBuffer)
-    } else if (normalizedMimeType === 'application/msword') {
-      extractedText = await extractTextFromDoc(fileBuffer)
-    } else {
-      extractedText = await extractTextFromImage(fileBuffer)
+    try {
+      if (parser === 'pdf-parse') {
+        extractedText = await extractTextFromPdf(fileBuffer)
+      } else if (parser === 'mammoth') {
+        extractedText = await extractTextFromDocx(fileBuffer)
+      } else if (parser === 'word-extractor') {
+        extractedText = await extractTextFromDoc(fileBuffer)
+      } else {
+        extractedText = await extractTextFromImage(fileBuffer)
+      }
+    } catch (parsingError) {
+      captureFileParsingFailure(parsingError, {
+        parser,
+        mimeType: normalizedMimeType,
+        sizeBytes: file.size,
+      })
+      await guard.fail()
+      return NextResponse.json(
+        { error: 'No se pudo leer el archivo. Probá con otro formato o volvé a exportarlo.' },
+        { status: 422 }
+      )
     }
 
     if (!extractedText || extractedText.length < 100) {
+      await guard.fail()
       return NextResponse.json(
         { error: 'No se pudo extraer contenido util del archivo. Intenta con otro documento.' },
         { status: 422 }
@@ -361,7 +395,7 @@ export async function POST(req: Request) {
     let extractionMethod: 'ai' | 'heuristic' = 'ai'
 
     try {
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: google('gemini-2.5-flash'),
         schema: parsedProgramSchema,
         schemaName: 'programStructure',
@@ -386,7 +420,16 @@ ${clippedText}`,
       })
 
       parsedProgram = parsedProgramSchema.parse(object)
-    } catch {
+      await guard.finish(usage)
+    } catch (schemaError) {
+      // Silencioso para el docente: cae al heurístico y ve un resultado peor
+      // sin ningún aviso. Por eso se reporta.
+      captureAiSchemaFailure(schemaError, {
+        endpoint: '/api/teacher/programs/extract',
+        fallback: 'heuristic',
+      })
+      // El heurístico no llama al modelo; el intento fallido igual se facturó.
+      await guard.fail()
       parsedProgram = parseHeuristicProgram(clippedText)
       extractionMethod = 'heuristic'
     }
@@ -433,6 +476,11 @@ ${clippedText}`,
       },
     })
   } catch (error) {
+    captureRouteFailure(error, {
+      endpoint: '/api/teacher/programs/extract',
+      status: 500,
+      operation: 'extract_program',
+    })
     return NextResponse.json(
       {
         error: 'No se pudo procesar el archivo',

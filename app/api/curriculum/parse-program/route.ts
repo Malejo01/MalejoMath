@@ -13,6 +13,8 @@ import { generateObject } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import { auth } from '@/auth'
+import { guardAiCall } from '@/lib/ai-guard'
+import { captureAiSchemaFailure, captureFileParsingFailure, captureRouteFailure } from '@/lib/observability'
 
 export const runtime = 'nodejs'
 
@@ -120,11 +122,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'El archivo supera el límite de 5 MB' }, { status: 400 })
   }
 
+  // Después de validar tipo y tamaño: rebotar un archivo inválido no debería
+  // gastar cupo. Antes de extraer texto, que en un PDF escaneado significa OCR.
+  const guard = await guardAiCall({ bucket: 'program_upload' })
+  if (!guard.ok) return guard.response
+
   try {
     const buffer = Buffer.from(await file.arrayBuffer())
-    const text = await extractText(file, buffer, mime)
+    const text = await extractText(file, buffer, mime).catch((parsingError) => {
+      captureFileParsingFailure(parsingError, {
+        parser:
+          mime === 'application/pdf'
+            ? 'pdf-parse'
+            : mime === 'application/msword'
+              ? 'word-extractor'
+              : 'mammoth',
+        mimeType: mime,
+        sizeBytes: file.size,
+      })
+      // Cae en el 422 de abajo, que ya le dice al alumno qué hacer.
+      return ''
+    })
 
     if (!text || text.length < 80) {
+      await guard.fail()
       return NextResponse.json({ error: 'No se pudo extraer contenido útil del archivo.' }, { status: 422 })
     }
 
@@ -132,7 +153,7 @@ export async function POST(req: Request) {
     let method: 'ai' | 'heuristic' = 'ai'
 
     try {
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: google('gemini-2.5-flash'),
         schema: parsedSchema,
         schemaName: 'programStructure',
@@ -148,7 +169,15 @@ ${text.slice(0, 20000)}`,
         maxOutputTokens: 2500,
       })
       parsed = parsedSchema.parse(object)
-    } catch {
+      await guard.finish(usage)
+    } catch (schemaError) {
+      captureAiSchemaFailure(schemaError, {
+        endpoint: '/api/curriculum/parse-program',
+        fallback: 'heuristic',
+      })
+      // El fallback heurístico no llama al modelo, pero el intento que falló sí
+      // se facturó: la fila queda como error y sigue contando.
+      await guard.fail()
       parsed = parseHeuristic(text)
       method = 'heuristic'
     }
@@ -169,6 +198,11 @@ ${text.slice(0, 20000)}`,
       topicCount: units.reduce((s, u) => s + u.topics.length, 0),
     })
   } catch (error) {
+    captureRouteFailure(error, {
+      endpoint: '/api/curriculum/parse-program',
+      status: 500,
+      operation: 'parse_program',
+    })
     return NextResponse.json(
       { error: 'Error al procesar el archivo', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }

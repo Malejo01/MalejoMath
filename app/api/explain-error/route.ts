@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
 import { getEducationContext } from '@/lib/education-context'
+import { guardAiCall } from '@/lib/ai-guard'
 
 export async function POST(req: Request) {
   const {
@@ -37,6 +38,9 @@ export async function POST(req: Request) {
     }
   }
 
+  const guard = await guardAiCall({ bucket: 'feedback', nivel })
+  if (!guard.ok) return guard.response
+
   const eduCtx = getEducationContext(nivel, grado, subject || 'la materia')
   const subjectContext = `\n${eduCtx.estrategiaMateria}`
 
@@ -44,7 +48,9 @@ export async function POST(req: Request) {
     ? `\nREFERENCIAS PEDAGÓGICAS ADICIONALES:\n${pedagogyContext}\n`
     : ''
 
-  const { text } = await generateText({
+  // `.catch` en vez de try/catch para no reindentar el prompt entero: sólo
+  // hace falta marcar la fila como fallida y dejar que el error siga su curso.
+  const generation = await generateText({
     model: google('gemini-2.5-flash'),
     messages: [
       {
@@ -92,7 +98,13 @@ REGLAS CRÍTICAS:
     ],
     maxOutputTokens: 4000,
     temperature: 0.5,
+  }).catch(async (error) => {
+    await guard.fail()
+    throw error
   })
+
+  const text = generation.text
+  await guard.finish(generation.usage)
 
   // Extraer sección 1 y sección 4 para guardar apunte / diagnóstico
   let misconceptionType = 'Confusión conceptual'

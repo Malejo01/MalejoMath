@@ -7,6 +7,7 @@ import { cookies } from 'next/headers'
 import { auth } from '@/auth'
 import { sql } from '@/lib/db'
 import { GUEST_COOKIE_NAME, verifyGuestToken } from '@/lib/guest-session'
+import { isAdminEmail } from '@/lib/ai-rate-limit'
 import type { UserRole } from '@/lib/types'
 
 /** Returns the full NextAuth session, or null if unauthenticated. */
@@ -42,6 +43,8 @@ export interface Viewer {
   role: UserRole | null
   isGuest: boolean
   displayName: string
+  /** Null para invitados: no tienen cuenta. Sólo se usa para la allowlist de admin. */
+  email: string | null
 }
 
 export async function getViewer(): Promise<Viewer | null> {
@@ -52,6 +55,7 @@ export async function getViewer(): Promise<Viewer | null> {
       role: session.user.role ?? null,
       isGuest: false,
       displayName: session.user.name ?? '',
+      email: session.user.email ?? null,
     }
   }
 
@@ -72,7 +76,7 @@ export async function getViewer(): Promise<Viewer | null> {
   const guest = rows[0]
   if (!guest || guest.claimed_by_user_id) return null
 
-  return { id: guest.id, role: 'ALUMNO', isGuest: true, displayName: guest.name ?? 'Invitado' }
+  return { id: guest.id, role: 'ALUMNO', isGuest: true, displayName: guest.name ?? 'Invitado', email: null }
 }
 
 /**
@@ -88,4 +92,20 @@ export async function getTeacherViewer(): Promise<Viewer | null> {
   `) as { role: string }[]
 
   return isDocente(rows[0]?.role) ? { ...viewer, role: 'DOCENTE' } : null
+}
+
+/**
+ * Viewer restringido a la allowlist de `ADMIN_EMAILS`.
+ *
+ * A propósito NO es un rol nuevo: agregar 'ADMIN' a `UserRole` obligaría a
+ * tocar el JWT, el onboarding, el middleware y cada chequeo de rol existente,
+ * y todavía no hay ningún caso de uso más allá de mirar el gasto antes de
+ * lanzar. Una variable de entorno alcanza y se migra a un rol de verdad el día
+ * que haga falta, sin deshacer nada de esto.
+ */
+export async function getAdminViewer(): Promise<Viewer | null> {
+  const viewer = await getViewer()
+  if (!viewer || viewer.isGuest) return null
+
+  return isAdminEmail(viewer.email) ? viewer : null
 }

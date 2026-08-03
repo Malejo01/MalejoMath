@@ -1,10 +1,8 @@
-import { neon } from '@neondatabase/serverless'
-import * as dotenv from 'dotenv'
+import { resolveDbTarget, type Sql } from './lib/db-target'
 import { DEFAULT_JURISDICTION } from '../lib/curriculum-config'
 
-dotenv.config({ path: '.env.local' })
-
-const sql = neon(process.env.DATABASE_URL!)
+// Asignado al inicio de seed(), una vez que el guardrail confirmó el destino.
+let sql!: Sql
 
 interface CurriculumEntry {
   jurisdiccion?: string
@@ -199,6 +197,8 @@ const DATA: CurriculumEntry[] = [
 ]
 
 async function seed() {
+  ;({ sql } = await resolveDbTarget({ action: 'seed del currículum Secundario' }))
+
   console.log(`Seeding ${DATA.length} curriculum rows (Nivel Secundario)...\n`)
   let inserted = 0
   let skipped = 0

@@ -1,5 +1,6 @@
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
+import { isAdminEmail } from '@/lib/ai-rate-limit'
 
 // Routes that do NOT require a NextAuth session.
 //
@@ -8,19 +9,27 @@ import { NextResponse } from 'next/server'
 // handlers resolves the viewer itself (getViewer) and answers 401 when there
 // is neither identity, so "public" here means "the middleware must not bounce
 // them to /sign-in", not "unauthenticated access allowed".
+//
+// Los cuatro endpoints de IA de esta lista pasan además por guardAiCall
+// (lib/ai-guard.ts), que exige identidad antes de tocar Gemini. Hasta la
+// migración 016 tres de ellos no verificaban absolutamente nada: cualquiera
+// con curl podía quemar la cuota. Si agregás un endpoint de IA acá, cableá el
+// guard en el handler o volvés a abrir ese agujero.
 const PUBLIC_PATHS = [
   '/',
   '/sign-in',
   '/sign-up',
   '/api/auth',            // NextAuth's own routes
-  '/api/generate-quiz',   // Public quiz generation (kept public as before)
-  '/api/explain-error',   // Public error explanation
+  '/api/generate-quiz',   // Guests generate inside an aula
+  '/api/explain-error',   // Explicación del error tras responder mal
   '/aula',                // Join-by-code page
   '/aulas',               // "Mis aulas"
   '/api/classrooms',      // Join endpoint
   '/api/student',         // Student-side aula endpoints
   '/api/quiz/save-result',      // Guests submit attempts too
   '/api/quiz/grade-short-answer',
+  '/api/quiz/revancha',   // Se dispara desde la pantalla de resultados
+  '/monitoring',          // Túnel de Sentry (tunnelRoute en next.config.mjs)
 ]
 
 function isPublic(pathname: string): boolean {
@@ -35,6 +44,23 @@ export default auth((req) => {
     const signInUrl = new URL('/sign-in', nextUrl.origin)
     signInUrl.searchParams.set('callbackUrl', nextUrl.pathname)
     return NextResponse.redirect(signInUrl)
+  }
+
+  // /admin no se protege por rol sino por la allowlist ADMIN_EMAILS: no existe
+  // un rol ADMIN en el producto. Esto es defensa en profundidad — la página y
+  // la ruta ya chequean con getAdminViewer() — y evita además que un no-admin
+  // llegue siquiera a ejecutar el handler.
+  if (isAuthenticated) {
+    const { pathname } = nextUrl
+    const isAdminPath =
+      pathname === '/admin' ||
+      pathname.startsWith('/admin/') ||
+      pathname === '/api/admin' ||
+      pathname.startsWith('/api/admin/')
+
+    if (isAdminPath && !isAdminEmail(session?.user?.email)) {
+      return NextResponse.redirect(new URL('/', nextUrl.origin))
+    }
   }
 
   // Authorize roles: block ALUMNO from teacher API and page endpoints

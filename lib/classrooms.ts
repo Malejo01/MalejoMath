@@ -74,5 +74,12 @@ export const ASSIGNMENT_STATE_LABEL: Record<AssignmentState, string> = {
   cerrada: 'Aula cerrada',
 }
 
-/** Guests get a small daily allowance so a leaked code can't burn the AI quota. */
+/**
+ * Cupo diario de generación para invitados.
+ *
+ * @deprecated La política de límites vive en `lib/ai-rate-limit.ts`
+ * (`AI_LIMITS.quiz_generation.guest`), que cubre todos los endpoints de IA y no
+ * sólo la generación. Esta constante queda como referencia del valor histórico;
+ * no la uses para decidir cortes nuevos.
+ */
 export const GUEST_DAILY_GENERATION_LIMIT = 3

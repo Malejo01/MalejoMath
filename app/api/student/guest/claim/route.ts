@@ -98,7 +98,10 @@ export async function POST() {
       RETURNING id
     `
 
-    await sql`UPDATE ai_generation_log SET user_id = ${userId} WHERE user_id = ${guestId}`
+    // El consumo de IA del invitado se muda a la cuenta real: si no, crear
+    // cuenta sería la forma de resetear el contador, y el gasto quedaría
+    // huérfano en el dashboard.
+    await sql`UPDATE ai_usage_log SET user_id = ${userId}, is_guest = false WHERE user_id = ${guestId}`
 
     await sql`
       UPDATE users SET claimed_by_user_id = ${userId}, updated_at = NOW() WHERE id = ${guestId}

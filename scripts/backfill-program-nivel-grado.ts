@@ -1,3 +1,4 @@
+import { resolveDbTarget } from './lib/db-target'
 /**
  * Best-effort backfill of teacher_programs.nivel / .grado (migration 014).
  *
@@ -11,10 +12,6 @@
  * Safe to re-run: only touches rows where nivel IS NULL.
  * Usage: npx tsx scripts/backfill-program-nivel-grado.ts [--apply]
  */
-import { neon } from '@neondatabase/serverless'
-import * as dotenv from 'dotenv'
-
-dotenv.config({ path: '.env.local' })
 
 type Nivel = 'Primario' | 'Secundario' | 'Superior'
 
@@ -42,14 +39,8 @@ function cleanGrado(rawGrado: string): string | null {
 }
 
 async function run() {
-  const dbUrl = process.env.DATABASE_URL
-  if (!dbUrl) {
-    console.error('DATABASE_URL no encontrada en .env.local')
-    process.exit(1)
-  }
-
   const apply = process.argv.includes('--apply')
-  const sql = neon(dbUrl)
+  const { sql } = await resolveDbTarget({ action: 'backfill de nivel/grado en teacher_programs' })
 
   const rows = (await sql`
     SELECT id, subject_name, pedagogy_profile, source_file_name
