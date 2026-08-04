@@ -1,12 +1,15 @@
 # Deuda técnica
 
 Relevado el **2026-08-03** sobre `feat/ai-usage-and-db-guardrails`, actualizado el mismo
-día a medida que se fue cerrando. Medido con `npx tsc --noEmit` y `npm audit`.
+día a medida que se fue cerrando. Ampliado el **2026-08-04** sobre
+`feature/feedback-y-limpieza` con el relevamiento de ESLint (sección 4).
+Medido con `npx tsc --noEmit`, `npm audit` y `npm run lint`.
 
 Versiones al momento de medir: `next@16.2.4`, `next-auth@5.0.0-beta.31`,
-`postcss@8.5.14`, `typescript@5.7.3`.
+`postcss@8.5.14`, `typescript@5.7.3`, `eslint@9`, `eslint-config-next@16.2.4`.
 
-**Estado: TypeScript en 0 errores y `ignoreBuildErrors` fuera. Quedan las 6
+**Estado: TypeScript en 0 errores y `ignoreBuildErrors` fuera. ESLint instalado y en
+verde, con 93 warnings de código preexistente inventariados y sin arreglar. Quedan las 6
 vulnerabilidades de `npm audit`, ninguna resuelta.**
 
 ---
@@ -168,6 +171,138 @@ cualquier limpieza de dependencias, sin urgencia.*
 
 ---
 
+## 4. ESLint — instalado el 2026-08-04, **93 warnings de código preexistente**
+
+`npm run lint` venía fallando desde antes porque **ESLint no estaba instalado**: el script
+decía `eslint .` y no había binario. No era una regla rota, era la herramienta ausente.
+
+Se instaló `eslint@9` + `eslint-config-next@16.2.4`, pineado a la misma versión que `next`.
+Desde la 16 ese paquete exporta configs planas directas, así que
+[eslint.config.mjs](../eslint.config.mjs) no necesita `FlatCompat` ni `@eslint/eslintrc`; los
+presets `core-web-vitals` y `typescript` ya traen typescript-eslint, react, react-hooks 7,
+jsx-a11y e import. `next lint` está deprecado desde la 15 y no se usa.
+
+La primera corrida dio **79 errores y 16 warnings**. Ninguno se arregló: se relevaron, se
+clasificaron acá, y las cuatro reglas que producían errores se bajaron a `warn`.
+
+**Por qué `warn` y no `off`.** `off` borra el hallazgo del reporte, y entonces nada distingue
+"no lo arreglamos todavía" de "no existe". `warn` deja el lint en verde — ESLint sólo falla
+por errores — y a la vez mantiene el inventario a la vista. Cada regla vuelve a `error` en
+cuanto su bloque llegue a cero; el comentario que dice eso está al lado de cada una en la
+config, no sólo acá.
+
+**Esto no pone en verde nada que estuviera en rojo en CI**: [ci.yml](../.github/workflows/ci.yml)
+corre `npm test` y `npm run build`, **no** el lint. La consecuencia de bajar a `warn` es
+enteramente local. Que el lint no esté en CI es, por otro lado, su propia deuda — no tiene
+sentido meterlo mientras haya 93 warnings, porque el paso pasaría siempre.
+
+### Clasificación
+
+| Regla | Cant. | Qué es | Riesgo real | Costo |
+|---|---|---|---|---|
+| `@typescript-eslint/no-explicit-any` | 52 | Tipos escapados a `any` | **Medio** | Alto |
+| `react-hooks/set-state-in-effect` | 22 | `setState` dentro de `useEffect` | **Bajo-medio** | Medio |
+| `@typescript-eslint/no-unused-vars` | 14 | Imports y bindings muertos | Ninguno | Trivial |
+| `prefer-const` | 2 | `let` que nunca se reasigna | Ninguno | Trivial (autofix) |
+| `@next/next/no-assign-module-variable` | 2 | Variable local llamada `module` | Bajo | Trivial |
+| `@next/next/no-img-element` | 1 | `<img>` en vez de `next/image` | Ninguno acá | Ninguno |
+| `react-hooks/purity` | 1 | `Math.random()` en render | Ninguno | No se toca |
+
+### 4a. `no-explicit-any` — 52, el bloque grande
+
+Concentración real, no disperso:
+
+| Archivo | Cant. |
+|---|---|
+| `app/api/generate-quiz/route.ts` | 18 |
+| `app/api/teacher/classrooms/[id]/report/route.ts` | 8 |
+| `lib/ai-usage.ts` | 5 |
+| `app/api/teacher/classrooms/[id]/students/[userId]/route.ts` | 4 |
+| `app/(app)/teacher/page.tsx`, `app/api/student/classrooms/route.ts`, `lib/classrooms-server.ts`, `lib/db.ts` | 2 c/u |
+| 9 archivos más | 1 c/u |
+
+**Es la contracara de no tener ORM**, que es una decisión explícita (ver CLAUDE.md): el
+driver de Neon devuelve las filas sin forma y `any` es el atajo. O sea que es exactamente el
+mismo problema que ya se cerró a mano para cuatro queries en la sección 3a — y ahí quedó
+documentado por qué importa: los cuatro **degradaban en silencio a "no hay datos"**,
+indistinguible de un caso vacío legítimo.
+
+Por eso el riesgo es medio y no cosmético: cada `any` sobre una fila de Postgres es un
+contrato de shape que vive únicamente en el string de SQL. Pero el costo también es alto —
+el arreglo correcto es declarar una interfaz por query, no un `Record<string, unknown>`
+genérico, que suprimiría el problema igual que el `any`.
+
+Dos de los 52 son distintos y hay que mirarlos aparte: los de `lib/db.ts` están en el
+`sql` lazy (`let lazySql: any`), donde el `any` es el tipo del cliente de Neon y no de una
+fila. Ese se arregla importando el tipo del driver, no escribiendo una interfaz.
+
+### 4b. `react-hooks/set-state-in-effect` — 22, regla nueva
+
+`eslint-plugin-react-hooks@7` la agregó; **no existía cuando se escribió este código**, así
+que no es que alguien la ignoró.
+
+| Archivo | Cant. |
+|---|---|
+| `components/teacher-subject-wizard.tsx` | 5 |
+| `components/explanation-modal.tsx`, `components/teacher-classrooms.tsx` | 2 c/u |
+| 13 archivos más (páginas de aulas/teacher, navbar, quiz-overlay, curriculum-selector, `use-mobile`…) | 1 c/u |
+
+Se parten en dos grupos que no cuestan lo mismo:
+
+- **Bootstrap de datos** (`navbar.tsx`, `aulas/page.tsx`, `teacher/page.tsx`): un `fetch` en
+  un efecto que guarda la respuesta en estado. Es el patrón que la regla marca por defecto y
+  el que menos vale la pena reescribir: la salida real es mover la carga al servidor, que es
+  un cambio de arquitectura, no un lint fix.
+- **Sincronización de estado derivado** (`teacher-subject-wizard.tsx`, `explanation-modal.tsx`):
+  estado que se recalcula a partir de props o de otro estado. Estos **sí** conviene cerrarlos:
+  son los que producen renders de más y estados imposibles, y el arreglo es derivar en vez de
+  sincronizar. `quiz-overlay.tsx` es de este grupo y ya tiene un `eslint-disable` de
+  `exhaustive-deps` puesto a mano, señal de que el efecto viene siendo incómodo hace rato.
+
+### 4c. El resto — ruido, salvo dos
+
+- **`no-unused-vars` (14)**: `app/(app)/teacher/page.tsx` (5) y `components/weak-points-section.tsx`
+  (4) concentran la mayoría. Cero riesgo, borrado mecánico. Ya venía como warning en el
+  preset, así que no bloqueaba nada.
+- **`prefer-const` (2)**: `teoricoCollected` y `practicoCollected` en
+  `app/api/generate-quiz/route.ts:712-713`. `eslint --fix` los cierra solos. Quedaron para no
+  mezclar un cambio de código con el commit que instala la herramienta.
+- **`no-assign-module-variable` (2)**: `const module = await import('word-extractor')` en
+  `app/api/teacher/programs/extract/route.ts:238` y `.../guide/route.ts:165`. No reasigna
+  nada — declara una variable llamada igual que el `module` de CommonJS, que el bundler puede
+  terminar sombreando. Se arregla renombrando la variable. **Nota aparte: las dos rutas tienen
+  el mismo helper de extracción duplicado**; el lint lo hizo visible de casualidad.
+- **`no-img-element` (1)**: el avatar de Google en `components/navbar.tsx:283`. **No aplica**:
+  `next.config.mjs` tiene `images.unoptimized: true`, así que `next/image` no optimizaría nada
+  y sólo agregaría peso. Se deja como está, por la misma razón que el punto 5 de `npm audit`.
+- **`react-hooks/purity` (1)**: `Math.random()` dentro de un `useMemo` en
+  `components/ui/sidebar.tsx:611`, para el ancho del skeleton. Es código **vendorizado** de
+  shadcn/ui, que CLAUDE.md dice componer y no reescribir. Arreglarlo se perdería en el
+  próximo `npx shadcn add`. La regla queda en `warn` sólo para `components/ui/**`, con eso
+  escrito en la config.
+
+### Orden sugerido para cerrarlo
+
+Por relación costo/beneficio, no por cantidad:
+
+1. **`prefer-const` + `no-unused-vars` (16)** — un `eslint --fix` y un borrado. Baja el ruido
+   del reporte un 17% en una sentada, que es lo que hace que el resto se vuelva legible.
+2. **`no-assign-module-variable` (2)** — renombrar dos variables, y de paso decidir qué hacer
+   con el helper de extracción duplicado.
+3. **`no-explicit-any` en `lib/db.ts` (2)** — es el tipo del driver, no una fila; se cierra
+   solo importando el tipo de `@neondatabase/serverless`.
+4. **`set-state-in-effect`, grupo "estado derivado"** (~8 de los 22) — los que dan bugs de
+   verdad.
+5. **`no-explicit-any` sobre filas de Neon (~48)** — archivo por archivo, empezando por
+   `generate-quiz` que tiene 18. Mismo método que la sección 3a: una interfaz por query, con
+   un comentario que apunte al `.sql` del DDL.
+6. **`set-state-in-effect`, grupo "bootstrap"** (~14) — último, porque el arreglo real es
+   mover la carga al servidor y eso no es un lint fix.
+
+Recién con (1)–(5) hechos tiene sentido subir las reglas a `error` y meter `npm run lint` en CI.
+
+---
+
 ## Riesgos latentes
 
 Cosas que hoy no molestan y que van a morder si cambia una condición. No son tareas: son
@@ -238,6 +373,9 @@ branch, y eso no entraba en el alcance del commit que agregó el botón.
 
 4. **Borrar o corregir las interfaces `Db*` sin uso de `lib/db.ts`** (ver 3a). No rompen
    nada, pero son tipos equivocados esperando que alguien los adopte de buena fe.
+5. **Primeros dos pasos del orden sugerido de ESLint** (ver 4): `eslint --fix` para
+   `prefer-const` y el borrado de los 14 `no-unused-vars`. 16 de los 93 warnings, sin
+   riesgo, y es lo que vuelve legible al reporte.
 
 ### Vivir con esto
 
