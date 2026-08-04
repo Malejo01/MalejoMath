@@ -29,6 +29,7 @@ const PUBLIC_PATHS = [
   '/api/quiz/save-result',      // Guests submit attempts too
   '/api/quiz/grade-short-answer',
   '/api/quiz/revancha',   // Se dispara desde la pantalla de resultados
+  '/api/feedback',        // Reportar un problema (el invitado también reporta)
   '/monitoring',          // Túnel de Sentry (tunnelRoute en next.config.mjs)
 ]
 

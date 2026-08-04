@@ -60,8 +60,14 @@ describe('numeración de migraciones', () => {
   })
 
   it('no saltea números sin declararlo', () => {
-    const highest = Math.max(...sqlFiles.map((entry) => entry.number))
-    const present = new Set(sqlFiles.map((entry) => entry.number))
+    // Un número está tomado si lo reclama un .sql O un runner. La 018 no tiene
+    // archivo .sql porque no es DDL: normaliza `origin_host` y todo su SQL vive
+    // en el runner. Mirando sólo los .sql aparecía como hueco, que es lo
+    // contrario de lo que pasa — el número está ocupado, y declararlo libre
+    // invitaría a que una rama futura lo reutilice, que es exactamente el
+    // choque que este archivo existe para evitar.
+    const present = new Set([...sqlFiles, ...runners].map((entry) => entry.number))
+    const highest = Math.max(...present)
     const gaps: number[] = []
 
     for (let n = 1; n <= highest; n += 1) {

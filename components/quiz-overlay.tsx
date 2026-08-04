@@ -76,8 +76,13 @@ export function QuizOverlay() {
   // Layering contract for the whole app — keep these in sync:
   //   z-10/z-20/z-30  page content, sticky navbar, fixed page action bars
   //   z-40            this overlay (must cover the navbar)
+  //   z-[45]          floating "Reportar problema" button (components/feedback-button.tsx)
   //   z-50            portaled Radix layers (Dialog, AlertDialog, Popover…)
   //   z-[100]         toasts
+  // The report button sits in the gap between this overlay and the Radix layer
+  // on purpose, and the gap is the whole reason it's z-[45] and not z-40+1 by
+  // accident: below z-40 it disappears exactly when a student hits a broken
+  // question, and at z-50 or above it would float over modal dialogs.
   // The overlay MUST stay below z-50: it used to be z-[100], which painted it
   // over every portaled dialog. Those dialogs still grabbed the body scroll
   // lock and pointer-events, so opening one from inside the quiz (the unsaved

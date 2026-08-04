@@ -200,6 +200,22 @@ el pin de npm la siga. Se dejó como está a propósito: el valor del campo hoy 
 
 Ver el punto 5 de `npm audit`. Está comentado en `next.config.mjs`.
 
+### `feedback_reports` y el refresco de staging
+
+La migración 019 agrega [`feedback_reports`](../scripts/019-feedback-reports.sql), que guarda
+**texto libre escrito por personas reales**. No tiene columna de email, pero es dato personal
+de hecho: un alumno que reporta un problema escribe lo que se le ocurre, incluido su nombre
+o el de su docente.
+
+[`scripts/anonymize-staging.ts`](../scripts/anonymize-staging.ts) ya borra las dos tablas
+equivalentes (`verification_tokens` y `teacher_program_uploads`) y **todavía no borra esta**.
+Hoy no molesta porque la tabla no existe en ninguna base; muerde el día que alguien clone
+producción a staging después de correr la 019.
+
+El arreglo es una línea (`DELETE FROM feedback_reports`) junto a las otras dos. Quedó sin
+hacer a propósito: tocar el script de anonimización es tocar el procedimiento de refresco de
+branch, y eso no entraba en el alcance del commit que agregó el botón.
+
 ---
 
 ## Prioridades abiertas
