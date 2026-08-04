@@ -2,15 +2,17 @@
 
 Relevado el **2026-08-03** sobre `feat/ai-usage-and-db-guardrails`, actualizado el mismo
 día a medida que se fue cerrando. Ampliado el **2026-08-04** sobre
-`feature/feedback-y-limpieza` con el relevamiento de ESLint (sección 4).
-Medido con `npx tsc --noEmit`, `npm audit` y `npm run lint`.
+`feature/feedback-y-limpieza` con el relevamiento de ESLint (sección 4) y el diagnóstico de
+los source maps de Sentry con Turbopack (sección 5).
+Medido con `npx tsc --noEmit`, `npm audit`, `npm run lint` y `CI=1 npm run build`.
 
 Versiones al momento de medir: `next@16.2.4`, `next-auth@5.0.0-beta.31`,
 `postcss@8.5.14`, `typescript@5.7.3`, `eslint@9`, `eslint-config-next@16.2.4`.
 
 **Estado: TypeScript en 0 errores y `ignoreBuildErrors` fuera. ESLint instalado y en
-verde, con 93 warnings de código preexistente inventariados y sin arreglar. Quedan las 6
-vulnerabilidades de `npm audit`, ninguna resuelta.**
+verde, con 93 warnings de código preexistente inventariados y sin arreglar. Source maps de
+Sentry diagnosticados y sin arreglar, por pedido. Quedan las 6 vulnerabilidades de
+`npm audit`, ninguna resuelta.**
 
 ---
 
@@ -303,6 +305,158 @@ Recién con (1)–(5) hechos tiene sentido subir las reglas a `error` y meter `n
 
 ---
 
+## 5. Source maps de Sentry con Turbopack — **diagnóstico, sin arreglo**
+
+**Síntoma reportado:** los mapas suben bien durante el build, pero Sentry no los aplica —
+el stack llega minificado y el panel ofrece *"Unminify Code"*. En el log de subida varios
+`.js.map` aparecen sin debug ID.
+
+Relevado el 2026-08-04 con tres builds locales (`next@16.2.4`, `@sentry/nextjs@10.69.0`),
+uno de ellos con `CI=1` para que el plugin dejara de estar en `silent` y escupiera el
+*Source Map Upload Report* completo.
+
+### Qué está pasando realmente
+
+**Turbopack es el bundler.** El build imprime `▲ Next.js 16.2.4 (Turbopack)` y deja
+`.next/turbopack/`. En Next 16 Turbopack es el default de `next build`, no hace falta ningún
+flag — el proyecto migró de bundler sin que nadie lo pidiera explícitamente.
+
+**Por eso Sentry ya no corre como plugin del bundler.** El log muestra:
+
+```
+Running next.config.js provided runAfterProductionCompile ...
+[@sentry/nextjs - After Production Compile] Info: ...
+```
+
+Con webpack, Sentry inyecta los debug IDs *durante* la compilación, desde un plugin. Con
+Turbopack no hay dónde engancharse, así que el SDK usa el hook `runAfterProductionCompile`
+de Next y **post-procesa el `.next` ya escrito**, inyectando los debug IDs con `sentry-cli`.
+Es un camino distinto, más nuevo, y es el que hay que mirar.
+
+### Los `.js.map` sin debug ID: reales, y en su mayoría inofensivos
+
+Los conté. **No son un único problema, son dos, y ninguno de los dos es el que rompe.**
+
+**56 de 240 mapas del servidor no tienen debug ID.** Son exactamente los
+`.next/server/app/**/page.js.map` y `**/route.js.map`. Ahora, esos `.js` **no tienen código
+de la aplicación**: son stubs de carga de 371 a 966 bytes. `app/api/feedback/route.js`
+entero es esto:
+
+```js
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/feedback/route.js")
+R.c("server/chunks/_next-internal_server_app_api_feedback_route_actions_0bigvl-.js")
+module.exports=R.m(957982).exports
+```
+
+El código real vive en `server/chunks/*.js`, **y esos sí tienen debug ID** (184 de 240). Un
+stack de servidor apunta a los chunks, no a los stubs. Que aparezcan sin ID en el log es
+ruido del reporte, no una pérdida de simbolicación.
+
+**1 de 31 chunks de cliente no tiene debug ID:** `03~yq9q893hmn.js`, 112 KB, el chunk de
+polyfills (contiene el shim de `Object.assign`). Ese sí es una pérdida real, pero acotada, y
+tiene causa conocida: `widenClientFileUpload` está en su default `false`, que según la
+documentación de Sentry excluye *"Next.js-internal code and code from dependencies"*.
+
+Los otros 30 chunks de cliente están **bien**: verifiqué que cada uno arranca con el snippet
+de runtime que registra el ID contra el stack…
+
+```js
+;!function(){try{var e=...globalThis...,n=(new e.Error).stack;
+n&&((e._debugIds||(e._debugIds={}))[n]="0a3168e3-1ce2-400d-aa14-223e15399943")}catch(e){}}();
+```
+
+…y termina con `//# debugId=0a3168e3-…`. Los dos extremos del mecanismo están puestos: el
+que el navegador lee en runtime y el que `sentry-cli` usa para aparear artefacto y mapa.
+
+**Conclusión incómoda pero importante: la línea del log que llamó la atención no es la causa
+del stack minificado.** Los archivos sin debug ID son stubs sin código y un chunk de
+polyfills. Arreglarlos no va a desminificar nada de la aplicación.
+
+### Entonces, ¿por qué llega minificado?
+
+Tres hipótesis que sí lo explicarían, ordenadas por probabilidad. **No se puede decidir entre
+ellas desde el repo** — hace falta mirar un evento real y el deploy que lo produjo.
+
+#### A. El bug upstream de Next 16 + Turbopack — *la más probable*
+
+[getsentry/sentry-javascript#18248](https://github.com/getsentry/sentry-javascript/issues/18248),
+*"Function names remain mangled in Sentry stack traces after upgrading to Next.js 16 +
+Turbopack"*. Abierto, etiquetado **State: Blocked** (espera a Turbopack, no a Sentry).
+Coincide en versión y en bundler con este proyecto.
+
+**Cómo confirmarlo en 30 segundos:** mirar un stack en el panel. Si el **archivo y la línea
+son correctos** pero los **nombres de función siguen ofuscados**, es este. Si no se ve nada
+del código fuente, no es este.
+
+#### B. El build que sube no es el que se sirve
+
+Los debug IDs se inyectan **después** de compilar, mutando `.next` (la doc de
+`useRunAfterProductionCompileHook` lo advierte: *"Enabling this option will mutate your
+Next.js build output"*). Cualquier cosa que reemplace un chunk después de esa inyección —
+caché de build reutilizando artefactos de un deploy anterior, un rebuild — deja el navegador
+sirviendo un `.js` cuyo ID no está en ningún bundle subido.
+
+**Cómo confirmarlo:** tomar la URL exacta de un frame minificado del issue, bajar ese chunk
+de producción, y buscarle el `//# debugId=` del final. Si no lo tiene, o si ese UUID no
+aparece en el *Source Map Upload Report* del deploy que lo sirvió, es esto.
+
+#### C. `widenClientFileUpload: false`
+
+Sólo explica frames dentro de código de Next o de dependencias (el chunk de polyfills, o un
+frame `[native code]`). **No explica** un stack minificado en código propio. Es un agujero
+real pero chico.
+
+### Opciones
+
+| # | Opción | Costo | Qué resuelve |
+|---|---|---|---|
+| 1 | **Diagnosticar antes de tocar**: mirar un evento real y decidir entre A, B y C | 15 min | Nada por sí solo, pero evita cambiar el build a ciegas |
+| 2 | **Volver a webpack**: `next build --webpack` | 1 palabra en `package.json` + build más lento | A y B de una. Es el camino que Sentry soporta hace años |
+| 3 | **`widenClientFileUpload: true`** | Build más lento | Sólo C |
+| 4 | **Esperar el fix upstream** | Cero | A, cuando llegue. Está *Blocked*, sin fecha |
+| 5 | **`next build --no-mangling`** | Bundle más pesado en producción | Enmascara A a costa del usuario final |
+
+El flag `--webpack` **existe en `next@16.2.4`** — lo verifiqué con `npx next build --help`,
+está junto a `--turbopack`. No es un downgrade ni un experimento: es la opción de salida que
+Next mantiene explícitamente.
+
+### Recomendación
+
+**Hacer (1) y después (2), en ese orden.**
+
+Primero (1) porque el reporte del log llevaba a un callejón: los `.js.map` sin debug ID son
+stubs vacíos, y sin mirar un evento real se corre el riesgo de "arreglar" eso y no cambiar
+nada. Son quince minutos y descartan o confirman B, que es la única hipótesis que un cambio
+de bundler **no** arreglaría si el problema fuera de caché de deploy.
+
+Después (2) `next build --webpack`, salvo que el diagnóstico apunte claro a B. Razones:
+
+- Es el único camino que Sentry soporta plenamente. La subida con Turbopack existe desde
+  `@sentry/nextjs@10.13.0`, es reciente, y tiene bugs abiertos y bloqueados justo en esta
+  combinación de versiones.
+- Es reversible con una palabra, y no toca ni una línea de código de la aplicación.
+- El costo es tiempo de build. En un proyecto de este tamaño eso es barato; un stack
+  minificado en el único canal de observabilidad que hay, no.
+
+**(3) va de arriba igual**, con cualquiera de las dos decisiones: cuesta un flag y cierra el
+chunk de polyfills. **(5) no**: `--no-mangling` le hace pagar al alumno, con bytes, la
+comodidad de leer un stack.
+
+Lo que **no** conviene es tocar `deleteSourcemapsAfterUpload`. Está bien como está: borra
+sólo los mapas de cliente (`.next/static/`), que son los únicos públicos, y deja los de
+servidor, que Sentry necesita en runtime y que nadie puede descargar. Verificado en el build:
+0 mapas en `.next/static/`, 240 en `.next/server/`.
+
+### Nota sobre los builds de este diagnóstico
+
+`SENTRY_AUTH_TOKEN` está en `.env.local`, así que **los tres builds subieron bundles de
+artefactos al proyecto real** (`personal-667/maestria`), con el `release` tomado del SHA del
+commit local de esta rama. Los dos últimos reportaron *"Nothing to upload, all files are on
+the server"* — se deduplicaron por hash. No se borró ni se pisó nada, pero quedan un par de
+releases con nombre de commit de rama en el panel.
+
+---
+
 ## Riesgos latentes
 
 Cosas que hoy no molestan y que van a morder si cambia una condición. No son tareas: son
@@ -376,6 +530,9 @@ branch, y eso no entraba en el alcance del commit que agregó el botón.
 5. **Primeros dos pasos del orden sugerido de ESLint** (ver 4): `eslint --fix` para
    `prefer-const` y el borrado de los 14 `no-unused-vars`. 16 de los 93 warnings, sin
    riesgo, y es lo que vuelve legible al reporte.
+6. **Decidir el bundler de producción** (ver 5): mirar un stack real para separar el bug
+   upstream de Turbopack de un desfasaje de deploy, y a partir de eso decidir si `next build`
+   vuelve a webpack. Mientras tanto, los stacks del panel no son confiables.
 
 ### Vivir con esto
 
