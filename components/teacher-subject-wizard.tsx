@@ -87,6 +87,17 @@ const AUTOFILLED_METHODOLOGIES = new Set([
   'generado desde curricula oficial',
 ])
 
+/**
+ * Qué le prometimos al docente en el tour de bienvenida, para repetírselo
+ * mientras completa los pasos previos. El texto está en futuro a propósito:
+ * describe lo que va a pasar en el paso 3, no lo que está pasando ahora.
+ */
+const INITIAL_PATH_HINT: Record<'import' | 'curriculum' | 'manual', string> = {
+  import: 'Vas a subir tu programa y la IA lo va a leer.',
+  curriculum: 'Vas a partir del diseño curricular oficial.',
+  manual: 'Vas a escribir el temario vos.',
+}
+
 const COMPLEXITY_OPTIONS = ['Básica', 'Intermedia', 'Avanzada']
 
 const ASSESSMENT_OPTIONS: { value: PedagogyProfile['assessmentStyle']; label: string }[] = [
@@ -97,6 +108,55 @@ const ASSESSMENT_OPTIONS: { value: PedagogyProfile['assessmentStyle']; label: st
 
 function normalizeTopicKey(name: string): string {
   return name.trim().toLowerCase()
+}
+
+/**
+ * Una lista que se pide al servidor y que depende de lo que el docente eligió
+ * antes: los años dependen del nivel, las materias del nivel y el año, los ejes
+ * de la materia. `url` en `null` significa "todavía no hay con qué pedirla".
+ *
+ * La respuesta se guarda JUNTO con la URL que la produjo, y sólo se expone si
+ * esa URL sigue siendo la vigente. Eso resuelve dos cosas a la vez:
+ *
+ *  - Vaciar la lista deja de ser una escritura de estado. Antes cada uno de
+ *    estos efectos empezaba con un `setGrades([])` sincrónico en la rama de
+ *    guarda, que es exactamente lo que marca `react-hooks/set-state-in-effect`;
+ *    ahora la lista vacía es una consecuencia de que la clave cambió.
+ *  - Arregla un parpadeo real: al cambiar de nivel, los años del nivel anterior
+ *    seguían en pantalla hasta que llegaba el fetch nuevo. Durante esos cientos
+ *    de milisegundos el docente podía elegir un año que no existe para el nivel
+ *    que acababa de elegir.
+ */
+function useCurriculumLookup<T>(url: string | null, field: string): { data: T[]; isLoading: boolean } {
+  const [cache, setCache] = useState<{ url: string | null; data: T[] }>({ url: null, data: [] })
+
+  useEffect(() => {
+    if (!url) return
+
+    let isMounted = true
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((json: unknown) => {
+        if (!isMounted) return
+        const value = (json as Record<string, unknown>)?.[field]
+        setCache({ url, data: Array.isArray(value) ? (value as T[]) : [] })
+      })
+      .catch(() => {
+        // Se cachea el fallo con su URL igual que un éxito vacío: si no, la
+        // lista queda "cargando" para siempre y el paso no se puede completar.
+        if (isMounted) setCache({ url, data: [] })
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [url, field])
+
+  return {
+    data: cache.url === url ? cache.data : [],
+    isLoading: url !== null && cache.url !== url,
+  }
 }
 
 export function TeacherSubjectWizard({
@@ -174,12 +234,17 @@ export function TeacherSubjectWizard({
   const [pedagogy, setPedagogy] = useState<PedagogyProfile>(DEFAULT_PEDAGOGY)
   const [sourceMeta, setSourceMeta] = useState<ProgramSourceMeta | null>(null)
 
-  const [grades, setGrades] = useState<string[]>([])
-  const [isLoadingGrades, setIsLoadingGrades] = useState(false)
-  const [curriculumSubjects, setCurriculumSubjects] = useState<string[]>([])
-  const [browseMateria, setBrowseMateria] = useState('')
-  const [axes, setAxes] = useState<CurriculumAxis[]>([])
-  const [isLoadingAxes, setIsLoadingAxes] = useState(false)
+  /**
+   * Qué materia del diseño curricular se está mirando en el paso 3.
+   *
+   * `null` no es lo mismo que `''`: `null` significa "el docente todavía no
+   * eligió, usá la coincidencia automática", y `''` significa "eligió no mirar
+   * ninguna". Antes esa diferencia no existía y la cubría un efecto que hacía
+   * `setBrowseMateria(match)` — un `setState` sincrónico dentro de un efecto,
+   * que es estado derivado escrito a mano. Ahora la coincidencia se calcula
+   * (ver `browseMateria` más abajo) y el estado guarda sólo la decisión humana.
+   */
+  const [browseMateriaChoice, setBrowseMateriaChoice] = useState<string | null>(null)
   const [collapsedAxes, setCollapsedAxes] = useState<string[]>([])
   const [topicSearch, setTopicSearch] = useState('')
 
@@ -212,7 +277,9 @@ export function TeacherSubjectWizard({
       // Programs from before migration 014 have no nivel/grado: start on step 1
       // so the teacher fills the gap, otherwise jump straight to the topics.
       setStep(programToEdit.nivel && programToEdit.grado ? 3 : 1)
-      setBrowseMateria(programToEdit.subjectName)
+      // Editando: la materia guardada es una elección explícita, no una
+      // coincidencia a adivinar.
+      setBrowseMateriaChoice(programToEdit.subjectName)
     } else {
       setNivel(null)
       setGrado('')
@@ -224,7 +291,9 @@ export function TeacherSubjectWizard({
       setUnits([])
       setPedagogy(DEFAULT_PEDAGOGY)
       setStep(1)
-      setBrowseMateria('')
+      // `null`, no `''`: materia nueva, que la coincidencia automática vuelva a
+      // correr en cuanto el docente escriba el nombre.
+      setBrowseMateriaChoice(null)
     }
 
     setSourceMeta(null)
@@ -249,95 +318,41 @@ export function TeacherSubjectWizard({
   }, [open, programToEdit, adoptUnits, initialPath])
 
   // ─── Curriculum lookups ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!open || !nivel) {
-      setGrades([])
-      return
-    }
+  // Las tres son la misma forma: una URL que existe sólo cuando están todos sus
+  // insumos, y una lista que se vacía sola cuando dejan de estar. Ver
+  // `useCurriculumLookup`.
+  const { data: grades, isLoading: isLoadingGrades } = useCurriculumLookup<string>(
+    open && nivel ? `/api/curriculum/grades?nivel=${encodeURIComponent(nivel)}` : null,
+    'grades'
+  )
 
-    let isMounted = true
-    setIsLoadingGrades(true)
-
-    fetch(`/api/curriculum/grades?nivel=${encodeURIComponent(nivel)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isMounted) return
-        setGrades(Array.isArray(data.grades) ? data.grades : [])
-      })
-      .catch(() => {
-        if (isMounted) setGrades([])
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingGrades(false)
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [open, nivel])
-
-  useEffect(() => {
-    if (!open || !nivel || !grado) {
-      setCurriculumSubjects([])
-      return
-    }
-
-    let isMounted = true
-
-    fetch(`/api/curriculum/subjects?nivel=${encodeURIComponent(nivel)}&grado=${encodeURIComponent(grado)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isMounted) return
-        setCurriculumSubjects(Array.isArray(data.subjects) ? data.subjects : [])
-      })
-      .catch(() => {
-        if (isMounted) setCurriculumSubjects([])
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [open, nivel, grado])
-
-  useEffect(() => {
-    if (!open || !nivel || !grado || !browseMateria) {
-      setAxes([])
-      return
-    }
-
-    let isMounted = true
-    setIsLoadingAxes(true)
-
-    const query = new URLSearchParams({ nivel, grado, materia: browseMateria })
-
-    fetch(`/api/curriculum/topics?${query.toString()}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isMounted) return
-        setAxes(Array.isArray(data.axes) ? data.axes : [])
-      })
-      .catch(() => {
-        if (isMounted) setAxes([])
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingAxes(false)
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [open, nivel, grado, browseMateria])
+  const { data: curriculumSubjects } = useCurriculumLookup<string>(
+    open && nivel && grado
+      ? `/api/curriculum/subjects?nivel=${encodeURIComponent(nivel)}&grado=${encodeURIComponent(grado)}`
+      : null,
+    'subjects'
+  )
 
   // When the curriculum offers exactly the subject the teacher named, browse it
-  // by default so step 3 opens with topics already on screen.
-  useEffect(() => {
-    if (browseMateria || curriculumSubjects.length === 0) return
+  // by default so step 3 opens with topics already on screen. Es un cálculo, no
+  // un estado: depende sólo de la lista que volvió del servidor y del nombre que
+  // escribió el docente.
+  const browseMateria = useMemo(() => {
+    if (browseMateriaChoice !== null) return browseMateriaChoice
 
-    const match = curriculumSubjects.find(
-      (materia) => normalizeTopicKey(materia) === normalizeTopicKey(subjectName)
+    return (
+      curriculumSubjects.find(
+        (materia) => normalizeTopicKey(materia) === normalizeTopicKey(subjectName)
+      ) ?? ''
     )
-    if (match) setBrowseMateria(match)
-  }, [curriculumSubjects, subjectName, browseMateria])
+  }, [browseMateriaChoice, curriculumSubjects, subjectName])
+
+  const { data: axes, isLoading: isLoadingAxes } = useCurriculumLookup<CurriculumAxis>(
+    open && nivel && grado && browseMateria
+      ? `/api/curriculum/topics?${new URLSearchParams({ nivel, grado, materia: browseMateria }).toString()}`
+      : null,
+    'axes'
+  )
 
   // ─── Unit / topic editing ──────────────────────────────────────────────────
   const addedTopicKeys = useMemo(() => {
@@ -627,7 +642,7 @@ export function TeacherSubjectWizard({
                 onClick={() => {
                   setNivel(option.value)
                   setGrado('')
-                  setBrowseMateria('')
+                  setBrowseMateriaChoice(null)
                 }}
                 className={`text-left p-4 rounded-xl border-2 transition-all ${isActive ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/40'}`}
               >
@@ -661,7 +676,7 @@ export function TeacherSubjectWizard({
                   variant={grado === option ? 'default' : 'outline'}
                   onClick={() => {
                     setGrado(option)
-                    setBrowseMateria('')
+                    setBrowseMateriaChoice(null)
                   }}
                 >
                   {option}
@@ -720,7 +735,7 @@ export function TeacherSubjectWizard({
                   title={materia}
                   onClick={() => {
                     setSubjectName(materia)
-                    setBrowseMateria(materia)
+                    setBrowseMateriaChoice(materia)
                   }}
                 >
                   {/* Names like "Espacio Institucional de Tutoría y Espacios
@@ -822,7 +837,7 @@ export function TeacherSubjectWizard({
                   variant={browseMateria === materia ? 'default' : 'outline'}
                   className="h-7 text-xs max-w-full"
                   title={materia}
-                  onClick={() => setBrowseMateria(materia)}
+                  onClick={() => setBrowseMateriaChoice(materia)}
                 >
                   <span className="min-w-0 truncate">{materia}</span>
                 </Button>
@@ -1249,6 +1264,20 @@ export function TeacherSubjectWizard({
             )
           })}
         </div>
+
+        {/* El camino elegido en el tour se resuelve recién en el paso 3, pero el
+            wizard siempre abre en el 1. Sin este recordatorio, el docente que
+            apretó "Subir un archivo" ve dos pantallas de formulario y da por
+            hecho que el botón no hizo nada. Desaparece al llegar al paso donde
+            su elección efectivamente se aplica. */}
+        {!isEditing && initialPath && step < 3 && (
+          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
+            <p className="text-muted-foreground">
+              {INITIAL_PATH_HINT[initialPath]} <span className="text-foreground">Primero, estos dos pasos cortos.</span>
+            </p>
+          </div>
+        )}
 
         <div className="py-1">
           {step === 1 && renderStepOne()}

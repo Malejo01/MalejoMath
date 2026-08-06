@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* `prose` no existe en Tailwind 4 sin esto: las páginas legales (/terminos,
+   /privacidad) son HTML semántico sin clases utilitarias, así que sin el plugin
+   Preflight las deja en 16px sin márgenes ni viñetas — un bloque de texto plano. */
+@plugin '@tailwindcss/typography';
+
 @custom-variant dark (&:is(.dark *));
 
 :root {

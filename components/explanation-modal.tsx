@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,9 @@ interface ExplanationModalProps {
   allowRevancha?: boolean
 }
 
+/** Cuántos caracteres se muestran de entrada, antes del primer tick del intervalo. */
+const TYPEWRITER_START = 60
+
 const LOADING_MESSAGES = [
   "Analizando tu respuesta e identificando el concepto...",
   "Detectando el posible malentendido o inconveniente...",
@@ -59,7 +62,14 @@ export function ExplanationModal({
   )
   const [revanchaQuestion, setRevanchaQuestion] = useState<MultipleChoiceQuestion | null>(null)
   const [selectedOpt, setSelectedOpt] = useState<number | null>(null)
-  const [displayedText, setDisplayedText] = useState<string>('')
+  /**
+   * Progreso del efecto máquina-de-escribir. Guarda `source` junto al largo
+   * porque el texto de la explicación cambia de una pregunta a otra: sin eso
+   * hacía falta un `setDisplayedText` sincrónico dentro del efecto para
+   * reiniciar la animación, que es estado derivado escrito a mano. Comparando
+   * `source` con la prop actual, un texto nuevo arranca solo desde cero.
+   */
+  const [reveal, setReveal] = useState<{ source: string; length: number }>({ source: '', length: 0 })
   const [loadingMsgIndex, setLoadingMsgIndex] = useState<number>(0)
 
   const isLoadingExplanation = !explanation || explanation.includes('Cargando')
@@ -73,33 +83,44 @@ export function ExplanationModal({
     return () => clearInterval(interval)
   }, [isLoadingExplanation])
 
-  // Progressive typewriter effect for AI explanation
+  // Progressive typewriter effect for AI explanation. Sólo avanza el contador;
+  // qué se ve con ese contador se calcula abajo, en `displayedText`.
   useEffect(() => {
-    if (!explanation || isLoadingExplanation) return
-    if (explanation.length < 100) {
-      setDisplayedText(explanation)
-      return
-    }
-
-    let currentLength = 60
-    setDisplayedText(explanation.substring(0, currentLength))
+    // Un texto corto no se anima: aparece entero, y eso ya lo resuelve el
+    // cálculo de `displayedText` sin necesidad de tocar el estado.
+    if (!explanation || isLoadingExplanation || explanation.length < 100) return
 
     const interval = setInterval(() => {
-      currentLength += Math.floor(Math.random() * 30) + 20
-      if (currentLength >= explanation.length) {
-        setDisplayedText(explanation)
-        clearInterval(interval)
-      } else {
-        setDisplayedText(explanation.substring(0, currentLength))
-      }
+      setReveal((prev) => {
+        const from = prev.source === explanation ? prev.length : TYPEWRITER_START
+        const next = from + Math.floor(Math.random() * 30) + 20
+
+        if (next >= explanation.length) clearInterval(interval)
+        return { source: explanation, length: Math.min(next, explanation.length) }
+      })
     }, 25)
 
     return () => clearInterval(interval)
   }, [explanation, isLoadingExplanation])
 
-  const handleStartRevancha = async () => {
+  const displayedText = useMemo(() => {
+    if (!explanation || isLoadingExplanation) return ''
+    if (explanation.length < 100) return explanation
+
+    const revealed = reveal.source === explanation ? reveal.length : TYPEWRITER_START
+    return explanation.substring(0, revealed)
+  }, [explanation, isLoadingExplanation, reveal])
+
+  /**
+   * Sólo el pedido en sí. Separado de `handleStartRevancha` porque el modal
+   * puede abrirse ya en modo revancha, y en ese caso `revanchaState` arranca en
+   * `'loading'` por inicializador: volver a ponerlo desde un efecto era un
+   * `setState` sincrónico redundante. La función es `async` y su primera
+   * instrucción con efecto es el `await fetch`, así que no escribe estado antes
+   * de ceder el control.
+   */
+  const requestRevancha = useCallback(async () => {
     if (!allowRevancha) return
-    setRevanchaState('loading')
     try {
       const res = await fetch('/api/quiz/revancha', {
         method: 'POST',
@@ -127,12 +148,21 @@ export function ExplanationModal({
       console.error('Revancha error:', err)
       setRevanchaState('idle')
     }
+  }, [allowRevancha, question, userAnswer, correctAnswer, topic, topicName, subject, nivel, grado, explanation])
+
+  /** Lo que dispara el botón: marca el estado y pide. */
+  const handleStartRevancha = () => {
+    if (!allowRevancha) return
+    setRevanchaState('loading')
+    requestRevancha()
   }
 
-  // Auto-start revancha if the modal was opened directly in that mode.
+  // Auto-start revancha if the modal was opened directly in that mode. El
+  // estado ya arranca en 'loading' por inicializador, así que acá sólo falta
+  // disparar el pedido — una vez, al montar.
   useEffect(() => {
     if (initialMode === 'revancha' && allowRevancha) {
-      handleStartRevancha()
+      requestRevancha()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

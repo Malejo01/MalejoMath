@@ -84,11 +84,12 @@ Ver `.env.local.example`: conexión a Postgres (Neon), credenciales de Auth.js/G
 
 ## Novedades y Actualizaciones Recientes
 
-- **Documentación Legal (Argentina)**: Se agregaron las páginas de Términos y Condiciones (`/terminos`) y Políticas de Privacidad (`/privacidad`), adaptadas a la Ley 25.326 de Argentina. Esto incluye manejo específico para menores mediante sesiones de invitado.
+- **Documentación Legal (Argentina)**: Se agregaron las páginas de Términos y Condiciones (`/terminos`) y Políticas de Privacidad (`/privacidad`), adaptadas a la Ley 25.326 de Argentina. Cubren los **tres** tipos de usuario que existen en el modelo de datos: docente registrado, alumno con cuenta propia de Google y alumno invitado sin cuenta — la distinción que importa no es el rol sino si hay o no una cuenta, porque sólo la cuenta implica entregar un correo electrónico. El contacto de ejercicio de derechos ARCO vive en [lib/legal-config.ts](lib/legal-config.ts), en un solo lugar para los dos documentos.
+- **Tour de bienvenida del docente**: El panel muestra una presentación de dos pantallas con las tres formas de armar el temario (subir un archivo, partir del diseño curricular, escribirlo a mano). La marca de "ya lo vio" es `users.teacher_tour_seen_at` (migración 020) y la escribe el servidor recién al cerrarlo: antes vivía en `localStorage` y se marcaba al abrirlo, así que una recarga a destiempo se lo comía para siempre y volvía a aparecer en cada navegador nuevo.
 - **Sistema de Feedback**: Nuevo botón para reportar problemas (`feat(feedback)`) que captura automáticamente el contexto de la aplicación.
 - **Mantenimiento y Deuda Técnica**: Actualización a ESLint 9 (Next 16 + TS) e inventario de deuda técnica.
 - **Mejoras de Infraestructura**:
   - Corrección de rutas de Sentry (sourcemaps con Turbopack) e instrumentación de fallos (`captureRouteFailure`).
   - Normalización del host de Neon DB para prevenir saltos del guardrail de base de datos no unpooled, y mejor reporte de variables de entorno faltantes.
   - Fix en el runner de cuestionarios por pregunta.
-- **Footer**: Incorporación del `<Footer />` global en `app/(app)/layout.tsx` para navegación hacia términos y privacidad.
+- **Footer y avisos legales**: El `<Footer />` global vive en `app/(app)/layout.tsx`. Como ni la pantalla de ingreso (`/sign-in`) ni la de entrar a un aula por código (`/aula/[codigo]`) están bajo ese layout — son pantallas sueltas a propósito —, ambas llevan además un [`<LegalNotice />`](components/legal-notice.tsx) al pie del formulario: son los dos puntos donde efectivamente se recolecta el dato, y un alumno que entra como invitado no pasa por ningún otro lado.

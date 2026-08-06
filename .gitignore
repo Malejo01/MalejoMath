@@ -22,3 +22,8 @@ node_modules
 coverage/
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Volcados de `gh run view --log`. Son artefactos de diagnóstico de CI:
+# pesados, en UTF-16 y sin valor histórico una vez leídos.
+run.log
+*.run.log

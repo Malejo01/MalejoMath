@@ -10,9 +10,9 @@ Versiones al momento de medir: `next@16.2.4`, `next-auth@5.0.0-beta.31`,
 `postcss@8.5.14`, `typescript@5.7.3`, `eslint@9`, `eslint-config-next@16.2.4`.
 
 **Estado: TypeScript en 0 errores y `ignoreBuildErrors` fuera. ESLint instalado y en
-verde, con 93 warnings de código preexistente inventariados y sin arreglar. Source maps de
-Sentry diagnosticados y sin arreglar, por pedido. Quedan las 6 vulnerabilidades de
-`npm audit`, ninguna resuelta.**
+verde, con 70 warnings inventariados — arrancó en 93, y lo que falta es casi todo
+`no-explicit-any` sobre filas de Neon. Source maps de Sentry diagnosticados y sin arreglar,
+por pedido. Quedan las 6 vulnerabilidades de `npm audit`, ninguna resuelta.**
 
 ---
 
@@ -173,7 +173,7 @@ cualquier limpieza de dependencias, sin urgencia.*
 
 ---
 
-## 4. ESLint — instalado el 2026-08-04, **93 warnings de código preexistente**
+## 4. ESLint — instalado el 2026-08-04, **70 warnings** (arrancó en 93)
 
 `npm run lint` venía fallando desde antes porque **ESLint no estaba instalado**: el script
 decía `eslint .` y no había binario. No era una regla rota, era la herramienta ausente.
@@ -196,9 +196,47 @@ config, no sólo acá.
 **Esto no pone en verde nada que estuviera en rojo en CI**: [ci.yml](../.github/workflows/ci.yml)
 corre `npm test` y `npm run build`, **no** el lint. La consecuencia de bajar a `warn` es
 enteramente local. Que el lint no esté en CI es, por otro lado, su propia deuda — no tiene
-sentido meterlo mientras haya 93 warnings, porque el paso pasaría siempre.
+sentido meterlo mientras queden decenas de warnings, porque el paso pasaría siempre.
+
+### Estado al 2026-08-06
+
+**93 → 70.** Se cerraron los pasos 1 a 4 del orden sugerido de más abajo, en dos tandas, con
+`npm test` en verde después de cada una:
+
+| Regla | Inicial | Ahora | Qué se hizo |
+|---|---|---|---|
+| `@typescript-eslint/no-explicit-any` | 52 | **50** | Sólo los 2 de `lib/db.ts`, importando el tipo del driver |
+| `react-hooks/set-state-in-effect` | 22 | **16** | Los 5 de "estado derivado" + el `localStorage` del tour docente |
+| `@typescript-eslint/no-unused-vars` | 14 | **2** | Borrado mecánico; quedan los `actionTypes` de `use-toast` (vendorizado) |
+| `prefer-const` | 2 | **0** | `eslint --fix` |
+| `@next/next/no-assign-module-variable` | 2 | **0** | Renombradas las dos variables `module` |
+| `@next/next/no-img-element` | 1 | 1 | No aplica — ver 4c |
+| `react-hooks/purity` | 1 | 1 | Código vendorizado — ver 4c |
+
+Lo cerrado en `set-state-in-effect` es el grupo que la sección 4b marcaba como el que da bugs
+de verdad:
+
+- **`teacher-subject-wizard.tsx` (5 → 1).** Los tres lookups de currícula (años, materias,
+  ejes) empezaban con un `setState([])` sincrónico para vaciar la lista. Ahora pasan por
+  `useCurriculumLookup`, que guarda la respuesta junto a la URL que la produjo y deriva la
+  lista de si esa URL sigue vigente. De paso arregla un bug real: al cambiar de nivel, los
+  años del nivel anterior seguían en pantalla hasta que llegaba el fetch, y en esa ventana se
+  podía elegir un año inexistente para el nivel recién elegido. El quinto era la
+  autoselección de materia, que ahora es un `useMemo` sobre `browseMateriaChoice`, donde
+  `null` ("todavía no eligió") dejó de ser lo mismo que `''` ("eligió ninguna").
+- **`explanation-modal.tsx` (2 → 1).** El efecto máquina-de-escribir guardaba el texto ya
+  revelado; ahora guarda `{ source, length }` y el texto se calcula, así que un enunciado
+  nuevo reinicia la animación sin escribir estado desde el efecto.
+
+**Los 2 que quedan en esos archivos no son estado derivado**: son "disparar una acción cuando
+el diálogo se abre o se monta", que es la categoría *bootstrap* del final de esta sección. El
+arreglo correcto es remontar el diálogo con `key` en vez de resetear a mano, y eso es un
+cambio de cómo el padre renderiza un componente de 1200 líneas — no un lint fix.
 
 ### Clasificación
+
+Los números de esta tabla son los del relevamiento inicial; la tabla de arriba tiene los
+actuales.
 
 | Regla | Cant. | Qué es | Riesgo real | Costo |
 |---|---|---|---|---|
@@ -287,21 +325,28 @@ Se parten en dos grupos que no cuestan lo mismo:
 
 Por relación costo/beneficio, no por cantidad:
 
-1. **`prefer-const` + `no-unused-vars` (16)** — un `eslint --fix` y un borrado. Baja el ruido
-   del reporte un 17% en una sentada, que es lo que hace que el resto se vuelva legible.
-2. **`no-assign-module-variable` (2)** — renombrar dos variables, y de paso decidir qué hacer
-   con el helper de extracción duplicado.
-3. **`no-explicit-any` en `lib/db.ts` (2)** — es el tipo del driver, no una fila; se cierra
-   solo importando el tipo de `@neondatabase/serverless`.
-4. **`set-state-in-effect`, grupo "estado derivado"** (~8 de los 22) — los que dan bugs de
-   verdad.
-5. **`no-explicit-any` sobre filas de Neon (~48)** — archivo por archivo, empezando por
-   `generate-quiz` que tiene 18. Mismo método que la sección 3a: una interfaz por query, con
-   un comentario que apunte al `.sql` del DDL.
-6. **`set-state-in-effect`, grupo "bootstrap"** (~14) — último, porque el arreglo real es
-   mover la carga al servidor y eso no es un lint fix.
+1. ~~**`prefer-const` + `no-unused-vars` (16)**~~ — **hecho**. Quedan 2 `no-unused-vars` en
+   `use-toast`, que es vendorizado.
+2. ~~**`no-assign-module-variable` (2)**~~ — **hecho**. Falta todavía decidir qué hacer con el
+   helper de extracción duplicado que el lint dejó a la vista.
+3. ~~**`no-explicit-any` en `lib/db.ts` (2)**~~ — **hecho**.
+4. ~~**`set-state-in-effect`, grupo "estado derivado"**~~ — **hecho** (5 cerrados). Ver el
+   detalle en "Estado al 2026-08-06".
+5. **`no-explicit-any` sobre filas de Neon (50)** — *pendiente, y es lo que queda grande*.
+   Archivo por archivo, empezando por `generate-quiz` que tiene 18. Mismo método que la
+   sección 3a: una interfaz por query, con un comentario que apunte al `.sql` del DDL.
+6. **`set-state-in-effect`, grupo "bootstrap" (16)** — último, porque el arreglo real es mover
+   la carga al servidor, o remontar los diálogos con `key`, y eso no es un lint fix.
 
-Recién con (1)–(5) hechos tiene sentido subir las reglas a `error` y meter `npm run lint` en CI.
+Recién con (5) hecho tiene sentido subir las reglas a `error` y meter `npm run lint` en CI.
+
+### Nota: `run.log` estuvo trackeado
+
+El commit `13a1867` incluyó `run.log` — 70 KB, UTF-16, 35.418 líneas, un volcado de
+`gh run view --log`. Se sacó del índice con `git rm --cached` y se agregó a `.gitignore`
+junto con `*.run.log`. Se le pasó un scan de secretos (tokens de Sentry, npm, claves de
+Google, URLs de Postgres) y salió limpio, así que **no hizo falta reescribir la historia**:
+el archivo sigue existiendo en los commits viejos y ahí puede quedarse.
 
 ---
 
@@ -527,9 +572,9 @@ branch, y eso no entraba en el alcance del commit que agregó el botón.
 
 4. **Borrar o corregir las interfaces `Db*` sin uso de `lib/db.ts`** (ver 3a). No rompen
    nada, pero son tipos equivocados esperando que alguien los adopte de buena fe.
-5. **Primeros dos pasos del orden sugerido de ESLint** (ver 4): `eslint --fix` para
-   `prefer-const` y el borrado de los 14 `no-unused-vars`. 16 de los 93 warnings, sin
-   riesgo, y es lo que vuelve legible al reporte.
+5. ~~**Primeros dos pasos del orden sugerido de ESLint**~~ — **hecho**, junto con los pasos 3
+   y 4 (93 → 70). Lo que sigue es el paso 5: los 50 `no-explicit-any` sobre filas de Neon,
+   empezando por los 18 de `generate-quiz`.
 6. **Decidir el bundler de producción** (ver 5): mirar un stack real para separar el bug
    upstream de Turbopack de un desfasaje de deploy, y a partir de eso decidir si `next build`
    vuelve a webpack. Mientras tanto, los stacks del panel no son confiables.

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useAppStore } from '@/lib/store'
 import { SubjectContent } from '@/components/subject-content'
 import { teacherProgramToSubject } from '@/lib/teacher-programs'
@@ -162,15 +162,43 @@ export default function TeacherPage() {
     }
   }, [isSignedIn, userProfile, isTeacher, router])
 
+  // El "ya lo vio" vive en `users.teacher_tour_seen_at` (migración 020), no en
+  // localStorage: es por cuenta y no por navegador, y se estampa recién cuando
+  // el docente CIERRA el tour — ver `dismissOnboarding`. Marcarlo al abrir,
+  // como se hacía antes, hacía que una recarga a destiempo se lo comiera para
+  // siempre.
   useEffect(() => {
-    if (isSignedIn && isTeacher) {
-      const seen = localStorage.getItem('maestria_teacher_onboarding_seen')
-      if (!seen) {
-        setShowOnboardingModal(true)
-        localStorage.setItem('maestria_teacher_onboarding_seen', 'true')
-      }
+    if (!isSignedIn || !isTeacher) return
+
+    let isMounted = true
+
+    fetch('/api/teacher/tour')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        // `data === null` es un error de red o un 5xx: se trata como "ya lo
+        // vio". Molestar con el tour a alguien que ya lo completó es peor que
+        // no mostrárselo a alguien nuevo, que igual encuentra los tres caminos
+        // dentro del wizard.
+        if (isMounted && data && !data.seenAt) setShowOnboardingModal(true)
+      })
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
     }
   }, [isSignedIn, isTeacher])
+
+  /**
+   * Cierra el tour y lo da por visto. Se llama tanto si el docente elige un
+   * camino como si sale por "Explorar por mi cuenta" o con la X: en los tres
+   * casos vio las pantallas, que es lo que la marca representa.
+   */
+  const dismissOnboarding = useCallback(() => {
+    setShowOnboardingModal(false)
+    // Fire-and-forget: si falla, el tour vuelve en la próxima visita. Es el
+    // fallo barato, y no vale trabar la UI con un await ni un spinner.
+    fetch('/api/teacher/tour', { method: 'POST' }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!isSignedIn || !isTeacher) {
@@ -903,9 +931,12 @@ export default function TeacherPage() {
 
       <TeacherOnboardingModal
         open={showOnboardingModal}
-        onOpenChange={setShowOnboardingModal}
+        onOpenChange={(next) => {
+          if (next) setShowOnboardingModal(true)
+          else dismissOnboarding()
+        }}
         onSelectPath={(path) => {
-          setShowOnboardingModal(false)
+          dismissOnboarding()
           setInitialWizardPath(path)
           setShowCreateWizard(true)
         }}

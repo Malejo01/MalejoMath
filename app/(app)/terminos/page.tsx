@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import { LEGAL_CONTACT_EMAIL, LEGAL_LAST_UPDATED } from '@/lib/legal-config'
 
 export const metadata: Metadata = {
   title: 'Términos y Condiciones | MaestrIA',
@@ -9,7 +10,7 @@ export default function TerminosPage() {
   return (
     <div className="max-w-4xl mx-auto py-8 md:py-12 prose prose-stone dark:prose-invert">
       <h1>Términos y Condiciones de Uso</h1>
-      <p className="text-muted-foreground">Última actualización: Agosto 2026</p>
+      <p className="text-muted-foreground">Última actualización: {LEGAL_LAST_UPDATED}</p>
 
       <section className="mt-8">
         <h2>1. Aceptación de los Términos</h2>
@@ -44,12 +45,15 @@ export default function TerminosPage() {
 
         <h3>3.2. Alumnos (Menores de Edad) e Invitados</h3>
         <p>
-          Los <strong>Alumnos</strong> acceden a la Plataforma generalmente a través de una sesión de invitado (&quot;Guest Session&quot;) 
-          mediante un código provisto por su Docente. Los Alumnos se comprometen a:
+          Los <strong>Alumnos</strong> acceden a la Plataforma de dos maneras posibles: a través de una sesión de
+          invitado (&quot;Guest Session&quot;) mediante un código provisto por su Docente —que es la vía recomendada
+          para el uso escolar y no requiere correo electrónico—, o bien creando una <strong>cuenta propia</strong>
+          con autenticación de Google. Los Alumnos se comprometen a:
         </p>
         <ul>
           <li>Utilizar la Plataforma exclusivamente para fines educativos.</li>
           <li><strong>No ingresar datos personales:</strong> Se les solicita expresamente no ingresar datos personales sensibles, información de contacto, direcciones, ni datos identificables propios o de terceros en las cajas de texto de respuesta a los cuestionarios o al interactuar con el asistente de IA.</li>
+          <li><strong>Contar con autorización para registrarse:</strong> Si el Alumno es menor de edad y opta por crear una cuenta propia en lugar de ingresar como invitado, debe hacerlo con el conocimiento y la autorización de sus padres, tutores o representantes legales, quienes asumen la supervisión de ese uso. La Plataforma no dispone de un mecanismo de verificación de edad.</li>
         </ul>
       </section>
 
@@ -114,7 +118,7 @@ export default function TerminosPage() {
           al domicilio del responsable de la Plataforma.
         </p>
         <p>
-          <strong>Contacto:</strong> Para cualquier consulta relacionada con estos Términos, comuníquese a <a href="mailto:privacidad@maestria.com" className="text-primary hover:underline">privacidad@maestria.com</a>.
+          <strong>Contacto:</strong> Para cualquier consulta relacionada con estos Términos, comuníquese a <a href={`mailto:${LEGAL_CONTACT_EMAIL}`} className="text-primary hover:underline">{LEGAL_CONTACT_EMAIL}</a>.
         </p>
       </section>
     </div>

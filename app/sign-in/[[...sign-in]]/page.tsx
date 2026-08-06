@@ -3,6 +3,7 @@
 import { signIn } from 'next-auth/react'
 import { GraduationCap } from 'lucide-react'
 import { MathBackground } from '@/components/math-background'
+import { LegalNotice } from '@/components/legal-notice'
 
 export default function SignInPage() {
   return (
@@ -44,9 +45,7 @@ export default function SignInPage() {
             Ingresar con Google
           </button>
 
-          <p className="text-xs text-center text-muted-foreground">
-            Al ingresar, aceptás los términos de uso de la plataforma.
-          </p>
+          <LegalNotice action="ingresar" />
         </div>
       </div>
     </div>

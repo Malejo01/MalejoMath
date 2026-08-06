@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GraduationCap, Loader2, LogIn, UserRound } from 'lucide-react'
 import { isValidJoinCode, normalizeJoinCode } from '@/lib/classrooms'
+import { LegalNotice } from '@/components/legal-notice'
 
 interface ClassroomPreview {
   id: number
@@ -185,6 +186,8 @@ export default function JoinClassroomPage() {
                 </Button>
               </div>
             )}
+
+            <LegalNotice action="entrar al aula" className="pt-1" />
           </>
         )}
       </Card>
