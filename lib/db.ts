@@ -1,8 +1,8 @@
-import { neon } from '@neondatabase/serverless'
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
-let lazySql: any = null
+let lazySql: NeonQueryFunction<false, false> | null = null
 
-export const sql = (...args: any[]) => {
+export const sql = ((...args: unknown[]) => {
   if (!lazySql) {
     const url = process.env.DATABASE_URL
     if (!url) {
@@ -11,8 +11,8 @@ export const sql = (...args: any[]) => {
     }
     lazySql = neon(url)
   }
-  return lazySql(...args)
-}
+  return (lazySql as (...params: unknown[]) => unknown)(...args)
+}) as NeonQueryFunction<false, false>
 
 // Types for database operations
 export interface DbUser {

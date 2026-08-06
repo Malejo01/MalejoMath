@@ -91,8 +91,6 @@ export function SubjectContent({ subject, classroomId }: SubjectContentProps) {
   const isQuestionCountValid = Number.isInteger(parsedQuestionCount)
     && parsedQuestionCount >= MIN_QUESTION_COUNT
     && parsedQuestionCount <= MAX_QUESTION_COUNT
-  const previewQuestionCount = isQuestionCountValid ? parsedQuestionCount : DEFAULT_QUESTION_COUNT
-
   const adjustQuestionCount = (delta: number) => {
     const base = isQuestionCountValid ? parsedQuestionCount : DEFAULT_QUESTION_COUNT
     const next = Math.min(MAX_QUESTION_COUNT, Math.max(MIN_QUESTION_COUNT, base + delta))

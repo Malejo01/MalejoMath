@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAppStore } from '@/lib/store'
 import { SubjectContent } from '@/components/subject-content'
 import { teacherProgramToSubject } from '@/lib/teacher-programs'
@@ -29,8 +29,6 @@ import {
   Trash2,
   PlayCircle,
   Eye,
-  ChevronLeft,
-  ChevronRight,
   X,
   Download,
   GraduationCap,
@@ -155,9 +153,7 @@ export default function TeacherPage() {
   // Saved quizzes can be published to an aula at any time, not only right
   // after generating them.
   const [sharingQuiz, setSharingQuiz] = useState<TeacherQuiz | null>(null)
-  const mySubjectsScrollRef = useRef<HTMLDivElement | null>(null)
-  const [canScrollMySubjectsLeft, setCanScrollMySubjectsLeft] = useState(false)
-  const [canScrollMySubjectsRight, setCanScrollMySubjectsRight] = useState(false)
+
 
   // Non-teachers shouldn't land here directly
   useEffect(() => {
@@ -308,36 +304,7 @@ export default function TeacherPage() {
     setExpandedQuizId(null)
   }
 
-  const updateMySubjectsScrollState = useCallback(() => {
-    const container = mySubjectsScrollRef.current
-    if (!container) return
 
-    const maxScrollLeft = container.scrollWidth - container.clientWidth
-    setCanScrollMySubjectsLeft(container.scrollLeft > 4)
-    setCanScrollMySubjectsRight(container.scrollLeft < maxScrollLeft - 4)
-  }, [])
-
-  const scrollMySubjects = useCallback((direction: 'left' | 'right') => {
-    const container = mySubjectsScrollRef.current
-    if (!container) return
-
-    const delta = direction === 'left' ? -280 : 280
-    container.scrollBy({ left: delta, behavior: 'smooth' })
-  }, [])
-
-  useEffect(() => {
-    const container = mySubjectsScrollRef.current
-    if (!container) return
-
-    updateMySubjectsScrollState()
-    container.addEventListener('scroll', updateMySubjectsScrollState)
-    window.addEventListener('resize', updateMySubjectsScrollState)
-
-    return () => {
-      container.removeEventListener('scroll', updateMySubjectsScrollState)
-      window.removeEventListener('resize', updateMySubjectsScrollState)
-    }
-  }, [teacherPrograms.length, updateMySubjectsScrollState])
 
   /**
    * `showCreateQuizAction` is on inside "Mis materias": starting a quiz used to

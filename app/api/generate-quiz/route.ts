@@ -709,8 +709,8 @@ situaciones diferentes.`
     if (mode === 'mixto') {
       const teoricoCount = Math.ceil(questionCount / 2)
       const practicoCount = Math.floor(questionCount / 2)
-      let teoricoCollected: any[] = []
-      let practicoCollected: any[] = []
+      const teoricoCollected: any[] = []
+      const practicoCollected: any[] = []
 
       for (let attempt = 0; attempt < 3 && (teoricoCollected.length < teoricoCount || practicoCollected.length < practicoCount); attempt++) {
         if (teoricoCollected.length < teoricoCount) {

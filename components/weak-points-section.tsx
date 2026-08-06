@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle, X, ChevronRight, Zap, Loader2, Target, BookOpen } from 'lucide-react'
+import { X, ChevronRight, Zap, Target } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/dialog'
 import { useAppStore } from '@/lib/store'
 import type { WeakPoint } from '@/lib/types'
-import { cn } from '@/lib/utils'
 import { QuizModeDialog } from './quiz-mode-dialog'
 
 interface WeakPointsSectionProps {

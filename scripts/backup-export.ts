@@ -22,7 +22,6 @@
  * runbook insiste en que exista fuera de GitHub.
  */
 import { spawn } from 'node:child_process'
-import { createWriteStream } from 'node:fs'
 import { mkdtemp, rm, stat, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

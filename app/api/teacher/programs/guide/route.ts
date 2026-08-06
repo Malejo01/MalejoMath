@@ -1,4 +1,4 @@
-﻿import { auth } from '@/auth'
+import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -162,8 +162,8 @@ async function extractTextFromDocx(buffer: Buffer): Promise<string> {
 }
 
 async function extractTextFromDoc(buffer: Buffer): Promise<string> {
-  const module = await import('word-extractor')
-  const WordExtractor = module.default
+  const wordExtractorModule = await import('word-extractor')
+  const WordExtractor = wordExtractorModule.default
   const extractor = new WordExtractor()
   const document = await extractor.extract(buffer)
   return String(document.getBody() || '').trim()

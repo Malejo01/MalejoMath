@@ -14,7 +14,7 @@ export default function PrivacidadPage() {
       <section className="mt-8">
         <h2>1. Identidad del Responsable</h2>
         <p>
-          En <strong>MaestrIA</strong> ("la Plataforma", "nosotros") estamos comprometidos con la protección de la privacidad
+          En <strong>MaestrIA</strong> (&quot;la Plataforma&quot;, &quot;nosotros&quot;) estamos comprometidos con la protección de la privacidad
           y los datos personales de nuestros usuarios. La presente Política de Privacidad describe cómo recopilamos,
           utilizamos y protegemos la información en cumplimiento estricto con la Ley N° 25.326 de Protección de los Datos
           Personales de la República Argentina y normativas concordantes de la Agencia de Acceso a la Información Pública (AAIP).
@@ -36,7 +36,7 @@ export default function PrivacidadPage() {
         <h3>2.2. Alumnos Invitados (Guest Session) y Menores de Edad</h3>
         <p>
           MaestrIA opera bajo el principio de <strong>minimización de datos</strong> para los alumnos. 
-          Los alumnos acceden a las aulas creadas por sus docentes mediante un código, operando como "Invitados".
+          Los alumnos acceden a las aulas creadas por sus docentes mediante un código, operando como &quot;Invitados&quot;.
         </p>
         <ul>
           <li><strong>Datos recolectados:</strong> Nombre de pila o seudónimo proporcionado por el alumno, respuestas a los cuestionarios, interacciones con nuestra Inteligencia Artificial (dudas, consultas pedagógicas) y métricas de desempeño.</li>

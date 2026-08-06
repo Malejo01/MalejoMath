@@ -14,7 +14,7 @@ export default function TerminosPage() {
       <section className="mt-8">
         <h2>1. Aceptación de los Términos</h2>
         <p>
-          Al acceder y utilizar la plataforma <strong>MaestrIA</strong> ("la Plataforma", "nosotros"), usted acepta 
+          Al acceder y utilizar la plataforma <strong>MaestrIA</strong> (&quot;la Plataforma&quot;, &quot;nosotros&quot;), usted acepta 
           quedar vinculado por los presentes Términos y Condiciones de Uso. Si no está de acuerdo con alguna parte de 
           estos términos, no debe utilizar la plataforma.
         </p>
@@ -33,7 +33,7 @@ export default function TerminosPage() {
         
         <h3>3.1. Docentes e Instituciones</h3>
         <p>
-          Los <strong>Docentes</strong> son usuarios registrados responsables de la creación y administración de sus "aulas". 
+          Los <strong>Docentes</strong> son usuarios registrados responsables de la creación y administración de sus &quot;aulas&quot;. 
           El Docente se compromete a:
         </p>
         <ul>
@@ -44,7 +44,7 @@ export default function TerminosPage() {
 
         <h3>3.2. Alumnos (Menores de Edad) e Invitados</h3>
         <p>
-          Los <strong>Alumnos</strong> acceden a la Plataforma generalmente a través de una sesión de invitado ("Guest Session") 
+          Los <strong>Alumnos</strong> acceden a la Plataforma generalmente a través de una sesión de invitado (&quot;Guest Session&quot;) 
           mediante un código provisto por su Docente. Los Alumnos se comprometen a:
         </p>
         <ul>
@@ -87,7 +87,7 @@ export default function TerminosPage() {
         <h2>6. Limitación de Responsabilidad</h2>
         <p>
           Si bien MaestrIA utiliza Inteligencia Artificial avanzada, los resultados, explicaciones y calificaciones generados 
-          por la IA pueden contener imprecisiones o "alucinaciones". <strong>La Plataforma actúa como una herramienta de apoyo 
+          por la IA pueden contener imprecisiones o &quot;alucinaciones&quot;. <strong>La Plataforma actúa como una herramienta de apoyo 
           docente y no reemplaza el criterio pedagógico humano.</strong> El Docente es el responsable último de revisar el 
           material.
         </p>
