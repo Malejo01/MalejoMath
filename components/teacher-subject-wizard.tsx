@@ -43,6 +43,7 @@ interface TeacherSubjectWizardProps {
   onProgramCreated: (program: TeacherProgram) => void
   onProgramUpdated?: (program: TeacherProgram) => void
   programToEdit?: TeacherProgram | null
+  initialPath?: 'import' | 'curriculum' | 'manual' | null
 }
 
 interface CurriculumAxis {
@@ -104,6 +105,7 @@ export function TeacherSubjectWizard({
   onProgramCreated,
   onProgramUpdated,
   programToEdit = null,
+  initialPath = null,
 }: TeacherSubjectWizardProps) {
   const { toast } = useToast()
   const isEditing = Boolean(programToEdit)
@@ -228,12 +230,23 @@ export function TeacherSubjectWizard({
     setSourceMeta(null)
     setActiveUnitId(null)
     setCustomTopicDraft({})
-    setShowFileImport(false)
     setTopicSearch('')
     setCollapsedAxes([])
-    setShowCurriculumSection(true)
-    setShowCustomSection(false)
-  }, [open, programToEdit, adoptUnits])
+
+    if (!programToEdit && initialPath === 'import') {
+      setShowCurriculumSection(false)
+      setShowCustomSection(true)
+      setShowFileImport(true)
+    } else if (!programToEdit && initialPath === 'manual') {
+      setShowCurriculumSection(false)
+      setShowCustomSection(true)
+      setShowFileImport(false)
+    } else {
+      setShowCurriculumSection(true)
+      setShowCustomSection(false)
+      setShowFileImport(false)
+    }
+  }, [open, programToEdit, adoptUnits, initialPath])
 
   // ─── Curriculum lookups ────────────────────────────────────────────────────
   useEffect(() => {

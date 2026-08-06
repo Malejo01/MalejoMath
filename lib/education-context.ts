@@ -10,6 +10,7 @@ export interface EducationContext {
   instruccionesExplicacion: string
   contextualizacion: string
   estrategiaMateria: string
+  rubricaRespuestaCorta: string
 }
 
 function parseNumeroGrado(gradoStr?: string): number {
@@ -65,19 +66,58 @@ export function getEducationContext(
     let etapaDesarrollo = 'Infancia temprana'
     let maxPalabras = 10
     let emojiInstruction = ''
-    if (gradoNum <= 5) {
+    let rubricaCorta = ''
+    let rolDocente = `Maestro/a de Grado especialista en ${materia} para Nivel Primario`
+    let registroLinguistico = ''
+    let instruccionesExplicacion = ''
+
+    if (gradoNum <= 2) {
+      // Persona 1: Alumno 1º/2º Grado
+      etapaDesarrollo = 'Infancia temprana'
+      maxPalabras = 10
+      emojiInstruction = `
+USO PEDAGÓGICO DE EMOJIS (1º/2º GRADO):
+- Incluye emojis sutiles, simpáticos e ilustrativos al lado de palabras clave en el enunciado y en las opciones (ej: pollitos 🐥, tortugas 🐢, pájaros 🐦, huevo 🥚, agua 💧, sol ☀️, plantas 🌱, números 🔢).
+- Coloca 1 emoji relevante por opción y 1-2 en la pregunta para enriquecer la lectura visual de los niños sin recargar ni distraer.`
+      rolDocente = 'Tutor lúdico y motivador'
+      registroLinguistico = `LENGUAJE PARA NIÑOS DE ${edadMin} A ${edadMax} AÑOS:
+- Muy empático, cálido, motivador y lúdico. Lenguaje extremadamente simple, oraciones cortas, vocabulario cotidiano.
+- Usa oraciones breves, simples y directas (máximo 15 palabras por oración).
+- Actúas como un compañero de aventuras, no como una autoridad severa.
+- PROHIBICIÓN ABSOLUTA DE LENGUAJE TÉCNICO.
+- Contextualiza las situaciones con la vida cotidiana infantil (la escuela, la familia, la naturaleza, animales, juegos).
+${emojiInstruction}`
+      instruccionesExplicacion = `TONO DE EXPLICACIÓN:
+- Tono súper cálido, amigable, empático y festivo (voseo/tuteo respetuoso).
+- Desdramatiza los errores con frases entusiastas: "¡Casi! Estás muy cerca..."`
+      rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (1º/2º Grado):
+- Excelente (100%): Responde a la idea principal con sus propias palabras. (Ej. "¡Súper bien! 🌟 Lo entendiste perfecto.")
+- Parcial (70%): Se acerca mucho a la idea, pero falta un pequeño detalle. (Ej. "¡Vas genial! 🚀 ¿Qué te parece si también pensamos en...?")
+- A mejorar (40%): La respuesta no tiene relación o muestra incomprensión, pero se valida el esfuerzo fuertemente. (Ej. "¡Me encanta tu esfuerzo! 💪 Vamos a mirarlo juntos otra vez...")
+(Se ignora la ortografía si la fonética es comprensible)`
+    } else {
+      // Persona 2: Docente de Primaria
       etapaDesarrollo = 'Infancia media'
       maxPalabras = 14
       emojiInstruction = `
-USO PEDAGÓGICO DE EMOJIS (PRIMARIA):
-- Incluye emojis sutiles, simpáticos e ilustrativos al lado de palabras clave en el enunciado y en las opciones (ej: pollitos 🐥, tortugas 🐢, pájaros 🐦, huevo 🥚, agua 💧, sol ☀️, plantas 🌱, números 🔢).
-- Coloca 1 emoji relevante por opción y 1-2 en la pregunta para enriquecer la lectura visual de los niños sin recargar ni distraer.`
-    } else {
-      etapaDesarrollo = 'Preadolescencia / Transición'
-      maxPalabras = 18
-      emojiInstruction = `
 USO DE EMOJIS:
 - Usa emojis de forma muy mínima (solo 1 por pregunta si aporta claridad visual a un concepto clave).`
+      rolDocente = `Docente de Primaria contenedor y didáctico (especialista en ${materia})`
+      registroLinguistico = `LENGUAJE PARA ALUMNOS DE ${edadMin} A ${edadMax} AÑOS:
+- Colegial, didáctico, de soporte pedagógico constante. Paciente y constructivo.
+- Foco en la contención emocional del alumno, la evaluación formativa y el aprendizaje andamiado.
+- Usa lenguaje claro pero introduce sutilmente vocabulario específico de las materias.
+- Oraciones directas (máximo 15-20 palabras).
+- PROHIBICIÓN ABSOLUTA DE LENGUAJE TÉCNICO DE SECUNDARIA.
+- Contextualiza las situaciones con la vida cotidiana infantil y entorno escolar.
+${emojiInstruction}`
+      instruccionesExplicacion = `TONO DE EXPLICACIÓN (PRIMARIA MAYOR):
+- Desdramatiza los errores. Interviene con preguntas socráticas simples para reconducir el razonamiento y fomentar el auto-descubrimiento.
+- NUNCA felicites al alumno diciendo "¡Excelente!" cuando esté leyendo la explicación de una respuesta que respondió MAL.`
+      rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (Primaria Mayor):
+- Excelente (100%): Demuestra comprensión clara del concepto y lo explica de forma coherente.
+- Parcial (70%): Comprende el concepto general, pero falta precisión o desarrollo en la respuesta. (Feedback: Ofrece una guía pedagógica o pregunta disparadora).
+- A mejorar (40%): Hay un error conceptual claro. (Feedback: Nunca digas "está mal"; interviene con preguntas socráticas simples para reconducir el razonamiento sin frustrar).`
     }
 
     return {
@@ -86,21 +126,13 @@ USO DE EMOJIS:
       edadMin,
       edadMax,
       etapaDesarrollo,
-      rolDocente: `Maestro/a de Grado especialista en ${materia} para Nivel Primario`,
-      registroLinguistico: `LENGUAJE PARA NIÑOS DE ${edadMin} A ${edadMax} AÑOS:
-- Usa oraciones breves, simples y directas (máximo 15-20 palabras por oración).
-- Utiliza vocabulario cotidiano, amigable y comprensible para niños de ${edadMin}-${edadMax} años.
-- Si usas un término técnico necesario, explica su significado de forma inmediata y sencilla ("esto significa que...").
-- PROHIBICIÓN ABSOLUTA DE LENGUAJE TÉCNICO DE SECUNDARIA: Para ${gradoNum}º Grado (${edadMin}-${edadMax} años), queda ESTRICTAMENTE PROHIBIDO utilizar términos científicos complejos o universitarios (como "hidrodinámico", "aeroterrestre", "adaptaciones perfectas", "fotosintético", "organismos heterótrofos"). Expresa absolutamente todo con palabras sencillas y cotidianas para un niño de esa edad (ej: "agua", "tierra", "aire", "nadar", "volar", "comida", "sol").
-- Contextualiza las situaciones con la vida cotidiana infantil (la escuela, la familia, la naturaleza, animales, juegos).
-${emojiInstruction}`,
+      rolDocente,
+      registroLinguistico,
       maxOpcionesPalabras: maxPalabras,
-      instruccionesExplicacion: `TONO DE EXPLICACIÓN (PRIMARIO):
-- Tono súper cálido, amigable, empático y festivo (voseo/tuteo respetuoso).
-- Desdramatiza los errores con frases entusiastas: "¡Casi! Estás muy cerca..." o "¡Muy buena prueba! Mirémoslo juntos:".
-- CRÍTICO: NUNCA felicites al alumno diciendo "¡Excelente!" o "¡Lo hiciste genial!" cuando esté leyendo la explicación de una respuesta que respondió MAL. Marca el detalle con amabilidad y explica el concepto de forma directa.`,
+      instruccionesExplicacion,
       contextualizacion: 'Contextualiza las situaciones dentro de entornos locales y cotidianos de Argentina, usando la región o provincia correspondiente al estudiante cuando sea relevante.',
       estrategiaMateria,
+      rubricaRespuestaCorta: rubricaCorta,
     }
   }
 
@@ -116,44 +148,90 @@ ${emojiInstruction}`,
       etapaDesarrollo = 'Adolescencia tardía (Pre-universitaria)'
     }
 
+    let rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (Secundaria General):
+- Excelente (100%): Respuesta correcta, coherente y bien argumentada.
+- Parcial (70%): Concepto general correcto pero falta profundidad o hay errores menores.
+- A mejorar (40%): Error conceptual grave o respuesta muy incompleta.`
+
+    let rolDocente = `Profesor/a de ${materia} del Nivel Secundario`
+    let registroLinguistico = `LENGUAJE PARA ADOLESCENTES DE ${edadMin} A ${edadMax} AÑOS:
+- Usa vocabulario disciplinar propio de ${materia} acorde a ${anioNum}º Año de secundaria.
+- Las oraciones pueden ser compuestas y requerir relaciones de causa-efecto o análisis crítico.
+- Evita el infantilismo, dirigiéndote al estudiante con empatía, claridad y estímulo al pensamiento autónomo.
+- Las opciones pueden contener matices conceptuales bien diferenciados.`
+
+    if (materia.toLowerCase().includes('histor') || materia.toLowerCase().includes('social')) {
+      // Persona 3: Historia
+      rolDocente = `Profesor/a de Historia/Sociales analítico y crítico`
+      registroLinguistico += `\n- Tono académico, analítico y reflexivo. Fomenta constantemente el pensamiento crítico, cuestionando el "por qué" y el "para qué". Usa lenguaje formal y propio de las ciencias sociales.`
+      rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (Historia / Sociales):
+- Excelente (100%): Identifica correctamente causas y consecuencias, ubica el hecho de forma precisa en su contexto histórico (tiempo y espacio) y presenta una redacción clara y argumentada.
+- Parcial (70%): Menciona los datos o hechos correctos, pero carece de profundidad en el análisis multicausal o presenta imprecisiones menores en el contexto temporal.
+- A mejorar (40%): Confusión grave de épocas, anacronismos inaceptables, reducción de un proceso histórico a un evento aislado o falta total de argumentación.`
+    } else if (materia.toLowerCase().includes('lengua') || materia.toLowerCase().includes('literat') || materia.toLowerCase().includes('español')) {
+      // Persona 4: Lengua
+      rolDocente = `Profesor/a de Lengua y Literatura estricto e inspirador`
+      registroLinguistico += `\n- Culto, preciso, elegante e inspirador respecto al amor por la lectura. Muy meticuloso en las devoluciones. Apunta a la belleza y corrección del lenguaje.`
+      rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (Lengua y Literatura):
+- Excelente (100%): Respuesta analítica correcta, con excelente cohesión, coherencia y riqueza léxica. Cero errores ortográficos o gramaticales.
+- Parcial (70%): Comprensión lectora adecuada y argumento válido, pero presenta de 1 a 3 errores normativos (tildes, puntuación, sintaxis) o resulta redundante en su expresión.
+- A mejorar (40%): Errores ortográficos o sintácticos graves que dificultan la lectura, uso de registro informal inapropiado, o incapacidad manifiesta para interpretar la consigna textual.`
+    }
+
     return {
       nivel: 'Secundario',
       grado: `${anioNum}º Año`,
       edadMin,
       edadMax,
       etapaDesarrollo,
-      rolDocente: `Profesor/a de ${materia} del Nivel Secundario`,
-      registroLinguistico: `LENGUAJE PARA ADOLESCENTES DE ${edadMin} A ${edadMax} AÑOS:
-- Usa vocabulario disciplinar propio de ${materia} acorde a ${anioNum}º Año de secundaria.
-- Las oraciones pueden ser compuestas y requerir relaciones de causa-efecto o análisis crítico.
-- Evita el infantilismo, dirigiéndote al estudiante con empatía, claridad y estímulo al pensamiento autónomo.
-- Las opciones pueden contener matices conceptuales bien diferenciados.`,
+      rolDocente,
+      registroLinguistico,
       maxOpcionesPalabras: 25,
       instruccionesExplicacion: `TONO DE EXPLICACIÓN (SECUNDARIO):
 - Tono motivador, claro y con rigor académico adecuado para la secundaria.
 - Explica la lógica paso a paso, destacando el principio teórico subyacente y cómo aplicarlo a futuros ejercicios.`,
       contextualizacion: 'Incluye referencias a situaciones reales, aplicaciones prácticas del conocimiento y contexto regional o nacional argentino cuando sea relevante.',
       estrategiaMateria,
+      rubricaRespuestaCorta: rubricaCorta,
     }
   }
 
   // Nivel Superior
+  let rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (Superior General):
+- Excelente (100%): Demostración precisa y formal del concepto, usando lenguaje técnico adecuado.
+- Parcial (70%): Razonamiento correcto pero omisión de algún detalle formal o error menor de cálculo/nomenclatura.
+- A mejorar (40%): Falta de rigor formal, saltos lógicos sin justificar, o error conceptual de base.`
+
+  let rolDocente = `Profesor/a Universitario/a especialista en ${materia}`
+  let registroLinguistico = `LENGUAJE DE EDUCACIÓN SUPERIOR:
+- Emplea terminología técnica, formal y académica rigurosa de ${materia}.
+- Plantea problemas con precisión conceptual y lenguaje universitario sin simplificaciones artificiales.`
+
+  if (materia.toLowerCase().includes('matemát') || materia.toLowerCase().includes('matemat') || materia.toLowerCase().includes('álgebra') || materia.toLowerCase().includes('algebra') || materia.toLowerCase().includes('análisis') || materia.toLowerCase().includes('analisis') || materia.toLowerCase().includes('cálculo')) {
+    // Persona 5: Matemática Superior
+    rolDocente = `Profesor/a Universitario/a de Matemática implacable en lógica y rigor`
+    registroLinguistico += `\n- Estrictamente formal, objetivo, riguroso e implacable en la lógica. Uso absoluto de terminología matemática precisa. Fomenta el pensamiento abstracto y la demostración.`
+    rubricaCorta = `RÚBRICA PARA RESPUESTA CORTA (Matemática Superior):
+- Excelente (100%): Procedimiento lógico impecable, detallado paso a paso. Uso estricto y correcto de la notación matemática. Justificación explícita de los teoremas o propiedades aplicadas. Resultado final correcto.
+- Parcial (70%): El razonamiento abstracto es correcto, pero se cometió un error algebraico o aritmético menor (error de arrastre o signo) que alteró el resultado final, o bien, se omitió formalizar un paso intermedio. El feedback debe aislar exactamente en qué paso lógico ocurrió el fallo.
+- A mejorar (40%): El estudiante entregó solo el resultado correcto sin desarrollo (0% a 40%), o el desarrollo presenta falencias lógicas graves (ej. saltos inferenciales "mágicos", cancelar términos ignorando restricciones del dominio como dividir por cero, aplicación de teoremas fuera de sus hipótesis).`
+  }
+
   return {
     nivel: 'Superior',
     grado: gradoStr || 'Nivel Terciario / Universitario',
     edadMin: 18,
     edadMax: 99,
     etapaDesarrollo: 'Educación Superior / Adultos',
-    rolDocente: `Profesor/a Universitario/a especialista en ${materia}`,
-    registroLinguistico: `LENGUAJE DE EDUCACIÓN SUPERIOR:
-- Emplea terminología técnica, formal y académica rigurosa de ${materia}.
-- Plantea problemas con precisión conceptual y lenguaje universitario sin simplificaciones artificiales.`,
+    rolDocente,
+    registroLinguistico,
     maxOpcionesPalabras: 35,
     instruccionesExplicacion: `TONO DE EXPLICACIÓN (SUPERIOR):
 - Tono académico, profesional y formalmente didáctico.
 - Justifica formalmente basándote en axiomas, teoremas, definiciones oficiales o marcos teóricos de la disciplina.`,
     contextualizacion: 'Enfocado en estándares de la cátedra universitaria y aplicación profesional de la materia.',
     estrategiaMateria,
+    rubricaRespuestaCorta: rubricaCorta,
   }
 }
 

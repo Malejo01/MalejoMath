@@ -37,9 +37,11 @@ import {
   AlertTriangle,
   Users,
   FilePlus,
+  Sparkles,
 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { TeacherSubjectWizard } from '@/components/teacher-subject-wizard'
+import { TeacherOnboardingModal } from '@/components/teacher-onboarding-modal'
 import { TeacherClassrooms } from '@/components/teacher-classrooms'
 import { ShareQuizDialog } from '@/components/share-quiz-dialog'
 import { SUBJECT_ICON_COMPONENTS } from '@/lib/subject-icons'
@@ -140,6 +142,8 @@ export default function TeacherPage() {
   const [activeSubject, setActiveSubject] = useState<string | null>(null)
   const [showCreateWizard, setShowCreateWizard] = useState(false)
   const [showEditWizard, setShowEditWizard] = useState(false)
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false)
+  const [initialWizardPath, setInitialWizardPath] = useState<'import' | 'curriculum' | 'manual' | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showOnlyMySubjects, setShowOnlyMySubjects] = useState(false)
@@ -161,6 +165,16 @@ export default function TeacherPage() {
       router.replace('/')
     }
   }, [isSignedIn, userProfile, isTeacher, router])
+
+  useEffect(() => {
+    if (isSignedIn && isTeacher) {
+      const seen = localStorage.getItem('maestria_teacher_onboarding_seen')
+      if (!seen) {
+        setShowOnboardingModal(true)
+        localStorage.setItem('maestria_teacher_onboarding_seen', 'true')
+      }
+    }
+  }, [isSignedIn, isTeacher])
 
   useEffect(() => {
     if (!isSignedIn || !isTeacher) {
@@ -617,7 +631,13 @@ export default function TeacherPage() {
             )}
 
             <div className="space-y-2">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Mis materias</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Mis materias</h2>
+                <Button variant="ghost" size="sm" onClick={() => setShowOnboardingModal(true)} className="text-xs h-7 text-primary hover:text-primary hover:bg-primary/10">
+                  <Sparkles className="w-3.5 h-3.5 mr-1" />
+                  Ayuda para crear
+                </Button>
+              </div>
               {teacherPrograms.length === 0 && (
                 <p className="text-sm text-muted-foreground">Todavia no cargaste materias propias.</p>
               )}
@@ -789,8 +809,12 @@ export default function TeacherPage() {
 
       <TeacherSubjectWizard
         open={showCreateWizard}
-        onOpenChange={setShowCreateWizard}
+        onOpenChange={(open) => {
+          setShowCreateWizard(open)
+          if (!open) setInitialWizardPath(null)
+        }}
         onProgramCreated={addTeacherProgram}
+        initialPath={initialWizardPath}
       />
 
       <TeacherSubjectWizard
@@ -909,6 +933,16 @@ export default function TeacherPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TeacherOnboardingModal
+        open={showOnboardingModal}
+        onOpenChange={setShowOnboardingModal}
+        onSelectPath={(path) => {
+          setShowOnboardingModal(false)
+          setInitialWizardPath(path)
+          setShowCreateWizard(true)
+        }}
+      />
     </div>
   )
 }
