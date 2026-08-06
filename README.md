@@ -81,3 +81,14 @@ Las migraciones se corren individualmente, ej: `npx tsx scripts/run-migration-01
 ## Variables de entorno
 
 Ver `.env.local.example`: conexión a Postgres (Neon), credenciales de Auth.js/Google OAuth, y la API key de Google Generative AI (Gemini).
+
+## Novedades y Actualizaciones Recientes
+
+- **Documentación Legal (Argentina)**: Se agregaron las páginas de Términos y Condiciones (`/terminos`) y Políticas de Privacidad (`/privacidad`), adaptadas a la Ley 25.326 de Argentina. Esto incluye manejo específico para menores mediante sesiones de invitado.
+- **Sistema de Feedback**: Nuevo botón para reportar problemas (`feat(feedback)`) que captura automáticamente el contexto de la aplicación.
+- **Mantenimiento y Deuda Técnica**: Actualización a ESLint 9 (Next 16 + TS) e inventario de deuda técnica.
+- **Mejoras de Infraestructura**:
+  - Corrección de rutas de Sentry (sourcemaps con Turbopack) e instrumentación de fallos (`captureRouteFailure`).
+  - Normalización del host de Neon DB para prevenir saltos del guardrail de base de datos no unpooled, y mejor reporte de variables de entorno faltantes.
+  - Fix en el runner de cuestionarios por pregunta.
+- **Footer**: Incorporación del `<Footer />` global en `app/(app)/layout.tsx` para navegación hacia términos y privacidad.
